@@ -5,6 +5,8 @@ mod game;
 mod setup;
 mod splash;
 
+const PLAYER_MOVEMENT_SPEED: f32 = 250.;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States)]
 enum GameState {
     #[default]

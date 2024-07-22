@@ -1,5 +1,6 @@
 use crate::camera_tracking;
 use crate::GameState;
+use crate::PLAYER_MOVEMENT_SPEED;
 use bevy::{prelude::*, render::texture::ImageLoader};
 
 #[derive(Component)]
@@ -9,10 +10,7 @@ pub fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
-    mut bg: ResMut<ClearColor>,
 ) {
-    bg.0 = Color::srgb(0.623, 0.689, 0.876);
-
     let texture_handle = asset_server.load("person.png");
     let layout = TextureAtlasLayout::from_grid(
         UVec2::new(40, 50),
@@ -64,16 +62,7 @@ fn keyboard_input_system(
     gamepads: Res<Gamepads>,
     button_inputs: Res<ButtonInput<GamepadButton>>,
     axes: Res<Axis<GamepadAxis>>,
-    mut sprite_position: Query<
-        (
-            Entity,
-            &mut Player,
-            &mut Transform,
-            &mut TextureAtlas,
-            &mut Sprite,
-        ),
-        With<Player>,
-    >,
+    mut sprite_position: Query<(&mut Transform, &mut TextureAtlas, &mut Sprite), With<Player>>,
 ) {
     let gamepad = match gamepads.iter().next() {
         Some(gp) => gp,
@@ -132,16 +121,30 @@ fn keyboard_input_system(
     let up_key_pressed = keyboard_input.pressed(KeyCode::ArrowUp) || left_stick_y > 0.0;
     let down_key_pressed = keyboard_input.pressed(KeyCode::ArrowDown) || left_stick_y < 0.0;
 
-    let (entity, mut player, mut transform, mut sprite, mut timer) = sprite_position.single_mut();
+    let (mut transform, mut texture_atlas, mut sprite_image) = sprite_position.single_mut();
 
     if left_key_pressed {
-        transform.translation.x -= 100.0 * time.delta_seconds();
+        let x = transform.translation.x - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        if x > -600. + 20. {
+            transform.translation.x -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        }
+        sprite_image.flip_x = false;
     } else if right_key_pressed {
-        transform.translation.x += 100.0 * time.delta_seconds();
+        let x = transform.translation.x + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        if x < 600. - 20. {
+            transform.translation.x += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        }
+        sprite_image.flip_x = true;
     } else if up_key_pressed {
-        transform.translation.y += 100.0 * time.delta_seconds();
+        let y = transform.translation.y + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        if y < 11200. {
+            transform.translation.y += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        }
     } else if down_key_pressed {
-        transform.translation.y -= 100.0 * time.delta_seconds();
+        let y = transform.translation.y - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        if y > -725. {
+            transform.translation.y -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        }
     }
 }
 
