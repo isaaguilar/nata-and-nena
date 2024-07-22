@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 mod camera;
+mod camera_tracking;
+mod game;
 mod setup;
 mod splash;
 
@@ -33,6 +35,6 @@ fn main() {
         .add_plugins((setup::WindowSetup, camera::CameraPlugin))
         .add_systems(PreUpdate, (close_on_esc))
         .init_state::<GameState>()
-        .add_plugins(splash::splash_plugin)
+        .add_plugins((splash::SplashPlugin, game::PlatformPlugin))
         .run();
 }

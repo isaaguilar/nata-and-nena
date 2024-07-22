@@ -13,10 +13,14 @@ fn despawn_screen<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands
     }
 }
 
-pub fn splash_plugin(app: &mut App) {
-    app.add_systems(OnEnter(GameState::Splash), splash_setup)
-        .add_systems(Update, countdown.run_if(in_state(GameState::Splash)))
-        .add_systems(OnExit(GameState::Splash), despawn_screen::<OnSplashScreen>);
+pub struct SplashPlugin;
+
+impl Plugin for SplashPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(OnEnter(GameState::Splash), splash_setup)
+            .add_systems(Update, countdown.run_if(in_state(GameState::Splash)))
+            .add_systems(OnExit(GameState::Splash), despawn_screen::<OnSplashScreen>);
+    }
 }
 
 #[derive(Component)]
@@ -69,7 +73,7 @@ fn splash_setup(
             },));
         });
 
-    commands.insert_resource(SplashTimer(Timer::from_seconds(1.5, TimerMode::Once)));
+    commands.insert_resource(SplashTimer(Timer::from_seconds(0.0, TimerMode::Once)));
 
     commands.spawn((
         RenderLayers::layer(2),
