@@ -2,7 +2,7 @@ use bevy::{
     asset::AssetMetaCheck,
     log::{Level, LogPlugin},
     prelude::*,
-    window::WindowMode,
+    window::{WindowMode, WindowResolution},
 };
 
 pub struct WindowSetup;
@@ -25,7 +25,7 @@ impl Plugin for WindowSetup {
                             min_width: 1200.0,
                             min_height: 750.0,
                         },
-                        resolution: (1200., 750.).into(),
+                        resolution: WindowResolution::new(1200., 750.),
                         prevent_default_event_handling: false,
                         visible: true,
                         ..default()

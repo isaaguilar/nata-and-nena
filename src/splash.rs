@@ -1,4 +1,5 @@
-use crate::GameState;
+use crate::despawn_screen;
+use crate::AppState;
 use bevy::{prelude::*, render::view::RenderLayers};
 
 #[derive(Component)]
@@ -7,19 +8,13 @@ pub struct OnSplashScreen;
 #[derive(Resource, Deref, DerefMut)]
 struct SplashTimer(Timer);
 
-fn despawn_screen<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands: Commands) {
-    for entity in &to_despawn {
-        commands.entity(entity).despawn_recursive();
-    }
-}
-
 pub struct SplashPlugin;
 
 impl Plugin for SplashPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Splash), splash_setup)
-            .add_systems(Update, countdown.run_if(in_state(GameState::Splash)))
-            .add_systems(OnExit(GameState::Splash), despawn_screen::<OnSplashScreen>);
+        app.add_systems(OnEnter(AppState::Splash), splash_setup)
+            .add_systems(Update, countdown.run_if(in_state(AppState::Splash)))
+            .add_systems(OnExit(AppState::Splash), despawn_screen::<OnSplashScreen>);
     }
 }
 
@@ -73,7 +68,7 @@ fn splash_setup(
             },));
         });
 
-    commands.insert_resource(SplashTimer(Timer::from_seconds(0.0, TimerMode::Once)));
+    commands.insert_resource(SplashTimer(Timer::from_seconds(1.0, TimerMode::Once)));
 
     commands.spawn((
         RenderLayers::layer(2),
@@ -99,11 +94,11 @@ fn splash_setup(
 }
 
 fn countdown(
-    mut game_state: ResMut<NextState<GameState>>,
+    mut game_state: ResMut<NextState<AppState>>,
     time: Res<Time>,
     mut timer: ResMut<SplashTimer>,
 ) {
     if timer.tick(time.delta()).finished() {
-        game_state.set(GameState::Game);
+        game_state.set(AppState::Game);
     }
 }

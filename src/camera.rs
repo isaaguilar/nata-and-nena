@@ -1,4 +1,4 @@
-use crate::GameState;
+use crate::AppState;
 use bevy::{log::info, prelude::*, render::view::RenderLayers};
 
 #[derive(Component)]
