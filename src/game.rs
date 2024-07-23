@@ -6,9 +6,10 @@ use bevy::{prelude::*, render::texture::ImageLoader};
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
-enum GameState {
+enum GamePhase {
     #[default]
-    None,
+    Open,
+    Dialog,
     Init,
     Begining,
     Middle,
@@ -22,13 +23,15 @@ pub struct Game;
 pub struct Player;
 
 #[derive(Component)]
+pub struct ActivePlayer;
+#[derive(Component)]
 pub struct Cloud;
 
 #[derive(Component)]
-pub struct OpenDialog;
+pub struct DialogBox;
 
 #[derive(Component)]
-pub struct Chalchiuhtlicue {
+pub struct Dialog {
     pub image: Handle<Image>,
     pub dialog: Text,
 }
@@ -54,6 +57,7 @@ pub fn setup(
 
     commands.spawn((
         Player,
+        ActivePlayer,
         Game,
         TextureAtlas {
             layout: texture_atlas_layout.clone(),
@@ -138,7 +142,7 @@ pub fn setup(
     };
     commands.spawn((
         Game,
-        Chalchiuhtlicue {
+        Dialog {
             image: texture_handle.clone(),
             dialog: Text {
                 sections: vec![TextSection {
@@ -169,17 +173,13 @@ fn cloud_movement(time: Res<Time>, mut clouds: Query<(&mut Transform), With<Clou
 }
 
 fn keyboard_input_system(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut game_state: ResMut<GameState>,
+    mut game_phase: ResMut<GamePhase>,
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     gamepads: Res<Gamepads>,
     button_inputs: Res<ButtonInput<GamepadButton>>,
     axes: Res<Axis<GamepadAxis>>,
-    chalchiuhtlicue_query: Query<&Chalchiuhtlicue>,
-    open_dialog: Query<Entity, With<OpenDialog>>,
-    mut sprite_position: Query<(&mut Transform, &mut TextureAtlas, &mut Sprite), With<Player>>,
+    mut player_query: Query<(&mut Transform, &mut TextureAtlas, &mut Sprite), With<Player>>,
 ) {
     let gamepad = match gamepads.iter().next() {
         Some(gp) => gp,
@@ -238,7 +238,7 @@ fn keyboard_input_system(
     let up_key_pressed = keyboard_input.pressed(KeyCode::ArrowUp) || left_stick_y > 0.0;
     let down_key_pressed = keyboard_input.pressed(KeyCode::ArrowDown) || left_stick_y < 0.0;
 
-    let (mut transform, mut texture_atlas, mut sprite_image) = sprite_position.single_mut();
+    let (mut transform, mut texture_atlas, mut sprite_image) = player_query.single_mut();
 
     if left_key_pressed {
         let x = transform.translation.x - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
@@ -267,79 +267,103 @@ fn keyboard_input_system(
     }
 
     if jump_key_just_pressed {
-        for entity in &open_dialog {
-            commands.entity(entity).despawn_recursive();
-        }
-        if *game_state == GameState::None {
-            let chalchiuhtlicue = chalchiuhtlicue_query.single();
-
-            commands
-                .spawn((
-                    Game,
-                    OpenDialog,
-                    NodeBundle {
-                        background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
-                        style: Style {
-                            width: Val::Percent(97.0),
-                            height: Val::Percent(15.0),
-                            position_type: PositionType::Absolute,
-                            align_items: AlignItems::Center,
-                            bottom: Val::Percent(2.5),
-                            left: Val::Percent(1.5),
-                            ..default()
-                        },
-
-                        ..default()
-                    },
-                ))
-                .with_children(|child| {
-                    child.spawn(ImageBundle {
-                        image: UiImage {
-                            texture: chalchiuhtlicue.image.clone(),
-                            ..default()
-                        },
-                        style: Style {
-                            position_type: PositionType::Absolute,
-                            align_items: AlignItems::Center,
-                            top: Val::Percent(10.0),
-                            left: Val::Percent(1.0),
-                            ..default()
-                        },
-                        ..default()
-                    });
-                    child.spawn(
-                        TextBundle::from_section(
-                            chalchiuhtlicue.dialog.sections[0].value.clone(),
-                            chalchiuhtlicue.dialog.sections[0].style.clone(),
-                        )
-                        .with_text_justify(JustifyText::Left)
-                        .with_style(Style {
-                            position_type: PositionType::Absolute,
-                            align_items: AlignItems::Center,
-                            top: Val::Percent(5.5),
-                            left: Val::Px(120.0),
-                            ..default()
-                        }),
-                    );
-                });
-            *game_state = GameState::Begining;
-        } else if *game_state == GameState::Begining {
-            *game_state = GameState::None;
-        }
+        *game_phase = GamePhase::Dialog;
     }
 }
 
-fn shutdown(mut commands: Commands) {}
+fn dialog_system(
+    mut commands: Commands,
+    mut game_phase: ResMut<GamePhase>,
+    open_dialog: Query<Entity, With<DialogBox>>,
+    dialog_query: Query<(&Dialog, &Transform)>,
+    player_query: Query<(&Transform), (With<Player>, With<ActivePlayer>)>,
+) {
+    if *game_phase != GamePhase::Dialog {
+        for entity in &open_dialog {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+
+    if *game_phase == GamePhase::Dialog {
+        let player_position = player_query.single();
+        let dialogs = dialog_query
+            .iter()
+            .filter(|(_, position)| {
+                (position.translation.x - player_position.translation.x).abs()
+                    + (position.translation.y - player_position.translation.y).abs()
+                    < 160.
+            })
+            .collect::<Vec<_>>();
+        let (dialog, _) = match dialogs.first() {
+            Some(d) => d,
+            None => {
+                *game_phase = GamePhase::Open;
+                return;
+            }
+        };
+        commands
+            .spawn((
+                Game,
+                DialogBox,
+                NodeBundle {
+                    background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
+                    style: Style {
+                        width: Val::Percent(97.0),
+                        height: Val::Percent(15.0),
+                        position_type: PositionType::Absolute,
+                        align_items: AlignItems::Center,
+                        bottom: Val::Percent(2.5),
+                        left: Val::Percent(1.5),
+                        ..default()
+                    },
+
+                    ..default()
+                },
+            ))
+            .with_children(|child| {
+                child.spawn(ImageBundle {
+                    image: UiImage {
+                        texture: dialog.image.clone(),
+                        ..default()
+                    },
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        align_items: AlignItems::Center,
+                        top: Val::Percent(10.0),
+                        left: Val::Percent(1.0),
+                        ..default()
+                    },
+                    ..default()
+                });
+                child.spawn(
+                    TextBundle::from_section(
+                        dialog.dialog.sections[0].value.clone(),
+                        dialog.dialog.sections[0].style.clone(),
+                    )
+                    .with_text_justify(JustifyText::Left)
+                    .with_style(Style {
+                        position_type: PositionType::Absolute,
+                        align_items: AlignItems::Center,
+                        top: Val::Percent(5.5),
+                        left: Val::Px(120.0),
+                        ..default()
+                    }),
+                );
+            });
+        // *game_phase = GamePhase::Begining;
+    }
+}
 
 pub struct PlatformPlugin;
 impl Plugin for PlatformPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(AppState::Game), (setup))
-            .init_resource::<GameState>()
+            .init_resource::<GamePhase>()
             .add_systems(PreUpdate, camera_tracking::camera_tracking_system)
             .add_systems(
                 Update,
-                (keyboard_input_system, cloud_movement).run_if(in_state(AppState::Game)),
+                (keyboard_input_system, cloud_movement, dialog_system)
+                    .run_if(in_state(AppState::Game)),
             );
     }
 }
