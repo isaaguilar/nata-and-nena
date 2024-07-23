@@ -146,7 +146,7 @@ pub fn setup(
             image: texture_handle.clone(),
             dialog: Text {
                 sections: vec![TextSection {
-                    value: String::from("Hello"),
+                    value: String::from("Hello, Frankie."),
                     style: text_style.clone(),
                 }],
                 ..default()
@@ -301,55 +301,57 @@ fn dialog_system(
                 return;
             }
         };
-        commands
-            .spawn((
-                Game,
-                DialogBox,
-                NodeBundle {
-                    background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
-                    style: Style {
-                        width: Val::Percent(97.0),
-                        height: Val::Percent(15.0),
-                        position_type: PositionType::Absolute,
-                        align_items: AlignItems::Center,
-                        bottom: Val::Percent(2.5),
-                        left: Val::Percent(1.5),
-                        ..default()
-                    },
+        if open_dialog.is_empty() {
+            commands
+                .spawn((
+                    Game,
+                    DialogBox,
+                    NodeBundle {
+                        background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
+                        style: Style {
+                            width: Val::Percent(97.0),
+                            height: Val::Percent(15.0),
+                            position_type: PositionType::Absolute,
+                            align_items: AlignItems::Center,
+                            bottom: Val::Percent(2.5),
+                            left: Val::Percent(1.5),
+                            ..default()
+                        },
 
-                    ..default()
-                },
-            ))
-            .with_children(|child| {
-                child.spawn(ImageBundle {
-                    image: UiImage {
-                        texture: dialog.image.clone(),
                         ..default()
                     },
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        align_items: AlignItems::Center,
-                        top: Val::Percent(10.0),
-                        left: Val::Percent(1.0),
+                ))
+                .with_children(|child| {
+                    child.spawn(ImageBundle {
+                        image: UiImage {
+                            texture: dialog.image.clone(),
+                            ..default()
+                        },
+                        style: Style {
+                            position_type: PositionType::Absolute,
+                            align_items: AlignItems::Center,
+                            top: Val::Percent(10.0),
+                            left: Val::Percent(1.0),
+                            ..default()
+                        },
                         ..default()
-                    },
-                    ..default()
+                    });
+                    child.spawn(
+                        TextBundle::from_section(
+                            dialog.dialog.sections[0].value.clone(),
+                            dialog.dialog.sections[0].style.clone(),
+                        )
+                        .with_text_justify(JustifyText::Left)
+                        .with_style(Style {
+                            position_type: PositionType::Absolute,
+                            align_items: AlignItems::Center,
+                            top: Val::Percent(5.5),
+                            left: Val::Px(120.0),
+                            ..default()
+                        }),
+                    );
                 });
-                child.spawn(
-                    TextBundle::from_section(
-                        dialog.dialog.sections[0].value.clone(),
-                        dialog.dialog.sections[0].style.clone(),
-                    )
-                    .with_text_justify(JustifyText::Left)
-                    .with_style(Style {
-                        position_type: PositionType::Absolute,
-                        align_items: AlignItems::Center,
-                        top: Val::Percent(5.5),
-                        left: Val::Px(120.0),
-                        ..default()
-                    }),
-                );
-            });
+        }
         // *game_phase = GamePhase::Begining;
     }
 }

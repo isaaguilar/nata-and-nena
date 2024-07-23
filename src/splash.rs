@@ -94,11 +94,11 @@ fn splash_setup(
 }
 
 fn countdown(
-    mut game_state: ResMut<NextState<AppState>>,
+    mut app_state: ResMut<NextState<AppState>>,
     time: Res<Time>,
     mut timer: ResMut<SplashTimer>,
 ) {
     if timer.tick(time.delta()).finished() {
-        game_state.set(AppState::Game);
+        app_state.set(AppState::Game);
     }
 }
