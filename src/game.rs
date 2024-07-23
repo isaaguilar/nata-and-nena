@@ -44,6 +44,12 @@ pub fn setup(
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
+    let text_style = TextStyle {
+        font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+        font_size: 18.0,
+        ..default()
+    };
+
     let texture_handle = asset_server.load("person.png");
     let layout = TextureAtlasLayout::from_grid(
         UVec2::new(40, 50),
@@ -77,6 +83,38 @@ pub fn setup(
         },
     ));
 
+    let texture_handle = asset_server.load("person2.png");
+    let layout = TextureAtlasLayout::from_grid(
+        UVec2::new(40, 50),
+        1,
+        1,
+        Some(UVec2::new(0, 0)),
+        Some(UVec2::new(0, 0)),
+    );
+
+    let texture_atlas_layout = texture_atlas_layouts.add(layout);
+
+    commands.spawn((
+        Player,
+        Game,
+        TextureAtlas {
+            layout: texture_atlas_layout.clone(),
+            index: 0,
+        },
+        SpriteBundle {
+            texture: texture_handle.clone(),
+            transform: Transform {
+                translation: Vec3::new(-100.0, 300.0, 10.0),
+                ..default()
+            },
+            sprite: Sprite {
+                flip_x: false,
+                ..default()
+            },
+            ..default()
+        },
+    ));
+
     let texture_handle = asset_server.load("cloud1.png");
 
     commands.spawn((
@@ -97,6 +135,16 @@ pub fn setup(
     commands.spawn((
         Game,
         Cloud,
+        Dialog {
+            image: asset_server.load("cloudguy.png"),
+            dialog: Text {
+                sections: vec![TextSection {
+                    value: String::from("Hello, Julien."),
+                    style: text_style.clone(),
+                }],
+                ..default()
+            },
+        },
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
@@ -135,11 +183,6 @@ pub fn setup(
 
     let texture_handle = asset_server.load("chalchiuhtlicue-bust.png");
 
-    let text_style = TextStyle {
-        font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
-        font_size: 18.0,
-        ..default()
-    };
     commands.spawn((
         Game,
         Dialog {
@@ -173,13 +216,18 @@ fn cloud_movement(time: Res<Time>, mut clouds: Query<(&mut Transform), With<Clou
 }
 
 fn keyboard_input_system(
+    mut commands: Commands,
     mut game_phase: ResMut<GamePhase>,
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     gamepads: Res<Gamepads>,
     button_inputs: Res<ButtonInput<GamepadButton>>,
     axes: Res<Axis<GamepadAxis>>,
-    mut player_query: Query<(&mut Transform, &mut TextureAtlas, &mut Sprite), With<Player>>,
+    mut active_player_query: Query<
+        (Entity, &mut Transform, &mut TextureAtlas, &mut Sprite),
+        With<ActivePlayer>,
+    >,
+    mut player_query: Query<Entity, With<Player>>,
 ) {
     let gamepad = match gamepads.iter().next() {
         Some(gp) => gp,
@@ -220,25 +268,26 @@ fn keyboard_input_system(
     // let run_key_just_pressed = button_inputs
     //     .just_pressed(GamepadButton::new(gamepad, GamepadButtonType::West))
     //     || keyboard_input.just_pressed(KeyCode::ShiftLeft);
-    let run_key_pressed = button_inputs
-        .pressed(GamepadButton::new(gamepad, GamepadButtonType::West))
-        || keyboard_input.pressed(KeyCode::ShiftLeft);
+    let switch_key_just_pressed = button_inputs
+        .just_pressed(GamepadButton::new(gamepad, GamepadButtonType::West))
+        || keyboard_input.just_pressed(KeyCode::ShiftLeft);
     // let left_key_just_pressed =
     //     left_stick_x < 0.0 || keyboard_input.just_pressed(KeyCode::ArrowLeft);
-    let left_key_pressed = left_stick_x < 0.0 || keyboard_input.pressed(KeyCode::ArrowLeft);
+    let left_key_pressed = left_stick_x < -0.10 || keyboard_input.pressed(KeyCode::ArrowLeft);
     // let right_key_just_pressed =
     //     left_stick_x > 0.0 || keyboard_input.just_pressed(KeyCode::ArrowRight);
-    let right_key_pressed = left_stick_x > 0.0 || keyboard_input.pressed(KeyCode::ArrowRight);
+    let right_key_pressed = left_stick_x > 0.10 || keyboard_input.pressed(KeyCode::ArrowRight);
 
-    let up_key_pressed = left_stick_y > 0.0 || keyboard_input.pressed(KeyCode::ArrowUp);
+    let up_key_pressed = left_stick_y > 0.10 || keyboard_input.pressed(KeyCode::ArrowUp);
     // let right_key_just_pressed =
     //     left_stick_x > 0.0 || keyboard_input.just_pressed(KeyCode::ArrowRight);
-    let down_key_pressed = left_stick_y < 0.0 || keyboard_input.pressed(KeyCode::ArrowDown);
+    let down_key_pressed = left_stick_y < -0.10 || keyboard_input.pressed(KeyCode::ArrowDown);
 
-    let up_key_pressed = keyboard_input.pressed(KeyCode::ArrowUp) || left_stick_y > 0.0;
-    let down_key_pressed = keyboard_input.pressed(KeyCode::ArrowDown) || left_stick_y < 0.0;
+    let up_key_pressed = keyboard_input.pressed(KeyCode::ArrowUp) || left_stick_y > 0.10;
+    let down_key_pressed = keyboard_input.pressed(KeyCode::ArrowDown) || left_stick_y < -0.10;
 
-    let (mut transform, mut texture_atlas, mut sprite_image) = player_query.single_mut();
+    let (mut active_player_entity, mut transform, mut texture_atlas, mut sprite_image) =
+        active_player_query.single_mut();
 
     if left_key_pressed {
         let x = transform.translation.x - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
@@ -264,6 +313,16 @@ fn keyboard_input_system(
         if y > -725. {
             transform.translation.y -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         }
+    }
+
+    if switch_key_just_pressed {
+        player_query.iter_mut().for_each(|e| {
+            if e == active_player_entity {
+                commands.entity(e).remove::<ActivePlayer>();
+            } else {
+                commands.entity(e).insert(ActivePlayer);
+            }
+        })
     }
 
     if jump_key_just_pressed {
