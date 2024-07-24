@@ -27,8 +27,6 @@ pub fn camera_tracking_system(
                 )
             });
 
-    info!("{:?}", player_average_position);
-
     let (_, mut camera_transform) = match camera_query.get_single_mut() {
         Ok(q) => q,
         Err(_) => return,

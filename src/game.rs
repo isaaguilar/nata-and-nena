@@ -31,6 +31,12 @@ pub struct Cloud;
 pub struct DialogBox;
 
 #[derive(Component)]
+pub struct TextIndicatorParentSelector;
+
+#[derive(Component)]
+pub struct TextIndicator;
+
+#[derive(Component)]
 pub struct Dialog {
     pub image: Handle<Image>,
     pub dialog: Text,
@@ -72,7 +78,7 @@ pub fn setup(
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
-                translation: Vec3::new(0.0, 400.0, 10.0),
+                translation: Vec3::new(210.0, -400.0, 10.0),
                 ..default()
             },
             sprite: Sprite {
@@ -104,7 +110,7 @@ pub fn setup(
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
-                translation: Vec3::new(-100.0, 300.0, 10.0),
+                translation: Vec3::new(-100.0, -300.0, 10.0),
                 ..default()
             },
             sprite: Sprite {
@@ -198,7 +204,7 @@ pub fn setup(
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
-                translation: Vec3::new(0.0, -100.0, -9.0),
+                translation: Vec3::new(0.0, -300.0, -9.0),
                 ..default()
             },
             ..default()
@@ -332,10 +338,13 @@ fn keyboard_input_system(
 
 fn dialog_system(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut game_phase: ResMut<GamePhase>,
     open_dialog: Query<Entity, With<DialogBox>>,
-    dialog_query: Query<(&Dialog, &Transform)>,
-    player_query: Query<(&Transform), (With<Player>, With<ActivePlayer>)>,
+    mut dialog_query: Query<(Entity, &Dialog, &Transform)>,
+    mut selected_text_query: Query<Entity, With<TextIndicatorParentSelector>>,
+    mut text_indicator_query: Query<Entity, With<TextIndicator>>,
+    active_player_query: Query<(&Transform), (With<Player>, With<ActivePlayer>)>,
 ) {
     if *game_phase != GamePhase::Dialog {
         for entity in &open_dialog {
@@ -343,23 +352,65 @@ fn dialog_system(
         }
     }
 
-    if *game_phase == GamePhase::Dialog {
-        let player_position = player_query.single();
-        let dialogs = dialog_query
-            .iter()
-            .filter(|(_, position)| {
-                (position.translation.x - player_position.translation.x).abs()
-                    + (position.translation.y - player_position.translation.y).abs()
-                    < 160.
-            })
-            .collect::<Vec<_>>();
-        let (dialog, _) = match dialogs.first() {
-            Some(d) => d,
-            None => {
-                *game_phase = GamePhase::Open;
-                return;
+    let player_position = active_player_query.single();
+    let mut dialogs = dialog_query
+        .iter()
+        .filter(|(_, _, t)| {
+            (t.translation.x - player_position.translation.x).abs()
+                + (t.translation.y - player_position.translation.y).abs()
+                < 160.
+        })
+        .map(|(e, d, t)| {
+            (
+                e,
+                d,
+                t,
+                (t.translation.x - player_position.translation.x).abs()
+                    + (t.translation.y - player_position.translation.y).abs(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    dialogs.sort_by(|(_, _, _, a), (_, _, _, b)| a.total_cmp(b));
+
+    let (mut entity, dialog, _, _) = match dialogs.first() {
+        Some(d) => d,
+        None => {
+            for entity in text_indicator_query.iter_mut() {
+                commands.entity(entity).despawn();
             }
-        };
+            *game_phase = GamePhase::Open;
+            return;
+        }
+    };
+
+    commands.entity(entity).insert(TextIndicatorParentSelector);
+    for e in selected_text_query.iter() {
+        if e != entity {
+            commands.entity(e).remove::<TextIndicatorParentSelector>();
+            commands.entity(e).despawn_descendants();
+        } else {
+            if text_indicator_query.is_empty() {
+                commands.entity(entity).with_children(|child| {
+                    let texture_handle = asset_server.load("textindicator.png");
+                    child.spawn((
+                        Game,
+                        TextIndicator,
+                        SpriteBundle {
+                            texture: texture_handle.clone(),
+                            transform: Transform {
+                                translation: Vec3::new(0.0, 50.0, 0.0),
+                                ..default()
+                            },
+                            ..default()
+                        },
+                    ));
+                });
+            }
+        }
+    }
+
+    if *game_phase == GamePhase::Dialog {
         if open_dialog.is_empty() {
             commands
                 .spawn((
