@@ -1,8 +1,11 @@
 use crate::camera_tracking;
 use crate::despawn_screen;
 use crate::AppState;
-use crate::PLAYER_MOVEMENT_SPEED;
+use crate::{
+    CHARACTER_DOWNWARD_VELOCITY_PER_FRAME, MAXIMUM_DOWNWARD_VELOCITY, PLAYER_MOVEMENT_SPEED,
+};
 use bevy::{prelude::*, render::texture::ImageLoader};
+use bevy_rapier2d::prelude::*;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
@@ -21,6 +24,12 @@ pub struct Game;
 
 #[derive(Component)]
 pub struct Player;
+
+#[derive(Component, Default)]
+struct TrajectoryVelocity {
+    x_per_second: f32,
+    y_per_second: f32,
+}
 
 #[derive(Component)]
 pub struct ActivePlayer;
@@ -41,6 +50,14 @@ pub struct Dialog {
     pub image: Handle<Image>,
     pub dialog: Text,
 }
+
+pub enum DirectionEnum {
+    Vertical,
+    Horizontal,
+}
+
+#[derive(Component)]
+pub struct MovingPlatform(pub DirectionEnum);
 
 // TODO add a timer
 // TODO add a point resource
@@ -69,7 +86,10 @@ pub fn setup(
 
     commands.spawn((
         Player,
+        TrajectoryVelocity::default(),
         ActivePlayer,
+        Collider::cuboid(20.0, 25.),
+        KinematicCharacterController::default(),
         Game,
         TextureAtlas {
             layout: texture_atlas_layout.clone(),
@@ -102,6 +122,9 @@ pub fn setup(
 
     commands.spawn((
         Player,
+        TrajectoryVelocity::default(),
+        Collider::cuboid(20.0, 25.0),
+        KinematicCharacterController::default(),
         Game,
         TextureAtlas {
             layout: texture_atlas_layout.clone(),
@@ -119,6 +142,32 @@ pub fn setup(
             },
             ..default()
         },
+    ));
+
+    commands.spawn((
+        Game,
+        RigidBody::Fixed,
+        Collider::polyline(
+            vec![
+                Vec2::new(-599.0, -725.0),
+                Vec2::new(599., -725.),
+                Vec2::new(599., 11200.),
+                Vec2::new(-599., 11200.),
+                Vec2::new(-599.0, -725.0),
+            ],
+            None,
+        ),
+    ));
+
+    commands.spawn((
+        Game,
+        MovingPlatform(DirectionEnum::Vertical),
+        RigidBody::KinematicPositionBased,
+        Collider::cuboid(50.0, 2.0),
+        TransformBundle::from_transform(Transform {
+            translation: Vec3::new(200.0, -600.0, 10.0),
+            ..default()
+        }),
     ));
 
     let texture_handle = asset_server.load("cloud1.png");
@@ -204,7 +253,7 @@ pub fn setup(
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
-                translation: Vec3::new(0.0, -300.0, -9.0),
+                translation: Vec3::new(0.0, 800.0, -9.0),
                 ..default()
             },
             ..default()
@@ -221,6 +270,44 @@ fn cloud_movement(time: Res<Time>, mut clouds: Query<(&mut Transform), With<Clou
     }
 }
 
+fn platform_movement(
+    time: Res<Time>,
+    mut platform_query: Query<&mut Transform, With<MovingPlatform>>,
+) {
+    for mut transform in platform_query.iter_mut() {
+        transform.translation.y += 10.0 * time.delta_seconds();
+    }
+}
+
+fn player_gravity_system(
+    time: Res<Time>,
+    mut player_query: Query<(&mut KinematicCharacterController, &mut TrajectoryVelocity)>,
+) {
+    for (mut transform, mut trajectory_velocity) in player_query.iter_mut() {
+        let d = (MAXIMUM_DOWNWARD_VELOCITY
+            - (trajectory_velocity.y_per_second + MAXIMUM_DOWNWARD_VELOCITY))
+            / MAXIMUM_DOWNWARD_VELOCITY;
+        if trajectory_velocity.y_per_second > 0. {
+            trajectory_velocity.y_per_second = 0.0;
+        } else if trajectory_velocity.y_per_second > -MAXIMUM_DOWNWARD_VELOCITY {
+            trajectory_velocity.y_per_second +=
+                CHARACTER_DOWNWARD_VELOCITY_PER_FRAME * time.delta_seconds() * d.cos();
+        }
+    }
+}
+
+fn translate_player_system(
+    time: Res<Time>,
+    mut player_query: Query<(&mut KinematicCharacterController, &mut TrajectoryVelocity)>,
+) {
+    for (mut transform, mut trajectory_velocity) in player_query.iter_mut() {
+        transform.translation = Some(Vec2::new(
+            trajectory_velocity.x_per_second * time.delta_seconds(),
+            trajectory_velocity.y_per_second * time.delta_seconds(),
+        ))
+    }
+}
+
 fn keyboard_input_system(
     mut commands: Commands,
     mut game_phase: ResMut<GamePhase>,
@@ -230,18 +317,22 @@ fn keyboard_input_system(
     button_inputs: Res<ButtonInput<GamepadButton>>,
     axes: Res<Axis<GamepadAxis>>,
     mut active_player_query: Query<
-        (Entity, &mut Transform, &mut TextureAtlas, &mut Sprite),
+        (
+            Entity,
+            &mut KinematicCharacterController,
+            &mut TextureAtlas,
+            &mut Sprite,
+            &mut TrajectoryVelocity,
+        ),
         With<ActivePlayer>,
     >,
+    active_player_kinematic_output_query: Query<(Entity, &KinematicCharacterControllerOutput)>,
     mut player_query: Query<Entity, With<Player>>,
 ) {
     let gamepad = match gamepads.iter().next() {
         Some(gp) => gp,
         None => Gamepad::new(0),
     };
-
-    let mut total_y = 0.0;
-    let mut total_x = 0.0;
 
     // *ptime = time::PhysicsTime::default();
     let pause_key_just_pressed = button_inputs
@@ -292,34 +383,54 @@ fn keyboard_input_system(
     let up_key_pressed = keyboard_input.pressed(KeyCode::ArrowUp) || left_stick_y > 0.10;
     let down_key_pressed = keyboard_input.pressed(KeyCode::ArrowDown) || left_stick_y < -0.10;
 
-    let (mut active_player_entity, mut transform, mut texture_atlas, mut sprite_image) =
-        active_player_query.single_mut();
+    let (
+        mut active_player_entity,
+        mut transform,
+        mut texture_atlas,
+        mut sprite_image,
+        mut trajectory_velocity,
+    ) = active_player_query.single_mut();
 
+    let mut grounded = match active_player_kinematic_output_query
+        .iter()
+        .find(|e| e.0 == active_player_entity)
+    {
+        Some((_, k)) => k.grounded,
+        None => false,
+    };
+
+    let mut total_x = 0.;
+    let mut total_y = 0.;
     if left_key_pressed {
-        let x = transform.translation.x - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        if x > -600. + 20. {
-            transform.translation.x -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        }
+        // let x = transform.translation.x - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        // if x > -600. + 20. {
+        //     transform.translation.x -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        // }
+        total_x = -PLAYER_MOVEMENT_SPEED; //* time.delta_seconds();
         sprite_image.flip_x = false;
     } else if right_key_pressed {
-        let x = transform.translation.x + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        if x < 600. - 20. {
-            transform.translation.x += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        }
+        // let x = transform.translation.x + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        // if x < 600. - 20. {
+        //     transform.translation.x += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        // }
+        total_x = PLAYER_MOVEMENT_SPEED; //* time.delta_seconds();
         sprite_image.flip_x = true;
     }
-    if up_key_pressed {
-        let y = transform.translation.y + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        // if y < 11200. {
-        if y < 1300. {
-            transform.translation.y += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        }
-    } else if down_key_pressed {
-        let y = transform.translation.y - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        if y > -725. {
-            transform.translation.y -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        }
-    }
+
+    // if up_key_pressed {
+    //     // let y = transform.translation.y + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+    //     // // if y < 11200. {
+    //     // if y < 1300. {
+    //     //     transform.translation.y += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+    //     // }
+    //     total_y = PLAYER_MOVEMENT_SPEED; // * time.delta_seconds();
+    // } else if down_key_pressed {
+    //     // let y = transform.translation.y - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+    //     // if y > -725. {
+    //     //     transform.translation.y -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+    //     // }
+    //     total_y = -PLAYER_MOVEMENT_SPEED; // * time.delta_seconds();
+    // }
 
     if switch_key_just_pressed {
         player_query.iter_mut().for_each(|e| {
@@ -328,12 +439,16 @@ fn keyboard_input_system(
             } else {
                 commands.entity(e).insert(ActivePlayer);
             }
-        })
+        });
+        total_x = 0.;
     }
 
     if jump_key_just_pressed {
         *game_phase = GamePhase::Dialog;
     }
+
+    trajectory_velocity.y_per_second += total_y;
+    trajectory_velocity.x_per_second = total_x;
 }
 
 fn dialog_system(
@@ -474,7 +589,14 @@ impl Plugin for PlatformPlugin {
             .add_systems(PreUpdate, camera_tracking::camera_tracking_system)
             .add_systems(
                 Update,
-                (keyboard_input_system, cloud_movement, dialog_system)
+                (
+                    keyboard_input_system,
+                    player_gravity_system,
+                    translate_player_system,
+                    cloud_movement,
+                    platform_movement,
+                    dialog_system,
+                )
                     .run_if(in_state(AppState::Game)),
             );
     }

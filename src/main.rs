@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy_rapier2d::prelude::*;
 mod camera;
 mod camera_tracking;
 mod game;
@@ -6,6 +7,8 @@ mod setup;
 mod splash;
 
 const PLAYER_MOVEMENT_SPEED: f32 = 250.;
+pub const MAXIMUM_DOWNWARD_VELOCITY: f32 = 400.0;
+pub const CHARACTER_DOWNWARD_VELOCITY_PER_FRAME: f32 = -600.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, States)]
 enum AppState {
@@ -42,6 +45,8 @@ fn main() {
     App::new()
         .add_plugins((setup::WindowSetup, camera::CameraPlugin))
         .add_systems(PreUpdate, (close_on_esc))
+        .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
+        .add_plugins(RapierDebugRenderPlugin::default())
         .init_state::<AppState>()
         .add_plugins((splash::SplashPlugin, game::PlatformPlugin))
         .run();
