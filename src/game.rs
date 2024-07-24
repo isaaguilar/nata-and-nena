@@ -26,9 +26,13 @@ pub struct Game;
 pub struct Player;
 
 #[derive(Component, Default)]
-struct TrajectoryVelocity {
+struct PlayerMovement {
     x_per_second: f32,
     y_per_second: f32,
+    airborne: bool,
+    falling: bool,
+    timer: Timer,
+    is_jump_reset: bool,
 }
 
 #[derive(Component)]
@@ -86,7 +90,11 @@ pub fn setup(
 
     commands.spawn((
         Player,
-        TrajectoryVelocity::default(),
+        PlayerMovement {
+            timer: Timer::from_seconds(0.4, TimerMode::Once),
+            falling: true,
+            ..default()
+        },
         ActivePlayer,
         Collider::cuboid(20.0, 25.),
         KinematicCharacterController::default(),
@@ -122,7 +130,11 @@ pub fn setup(
 
     commands.spawn((
         Player,
-        TrajectoryVelocity::default(),
+        PlayerMovement {
+            timer: Timer::from_seconds(0.4, TimerMode::Once),
+            falling: true,
+            ..default()
+        },
         Collider::cuboid(20.0, 25.0),
         KinematicCharacterController::default(),
         Game,
@@ -178,7 +190,7 @@ pub fn setup(
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
-                translation: Vec3::new(0.0, 1200.0, 0.0),
+                translation: Vec3::new(0.0, -110.0, 0.0),
                 ..default()
             },
             ..default()
@@ -203,7 +215,7 @@ pub fn setup(
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
-                translation: Vec3::new(-200.0, 800.0, 0.0),
+                translation: Vec3::new(-200.0, -200.0, 0.0),
                 ..default()
             },
             ..default()
@@ -253,7 +265,7 @@ pub fn setup(
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
-                translation: Vec3::new(0.0, 800.0, -9.0),
+                translation: Vec3::new(-450.0, -690.0, -9.0),
                 ..default()
             },
             ..default()
@@ -279,26 +291,33 @@ fn platform_movement(
     }
 }
 
-fn player_gravity_system(
-    time: Res<Time>,
-    mut player_query: Query<(&mut KinematicCharacterController, &mut TrajectoryVelocity)>,
-) {
-    for (mut transform, mut trajectory_velocity) in player_query.iter_mut() {
-        let d = (MAXIMUM_DOWNWARD_VELOCITY
-            - (trajectory_velocity.y_per_second + MAXIMUM_DOWNWARD_VELOCITY))
-            / MAXIMUM_DOWNWARD_VELOCITY;
-        if trajectory_velocity.y_per_second > 0. {
-            trajectory_velocity.y_per_second = 0.0;
-        } else if trajectory_velocity.y_per_second > -MAXIMUM_DOWNWARD_VELOCITY {
-            trajectory_velocity.y_per_second +=
-                CHARACTER_DOWNWARD_VELOCITY_PER_FRAME * time.delta_seconds() * d.cos();
+fn player_gravity_system(time: Res<Time>, mut player_query: Query<&mut PlayerMovement>) {
+    for mut player_movement in player_query.iter_mut() {
+        if player_movement.falling {
+            if player_movement.airborne && !player_movement.timer.finished() {
+                player_movement.timer.tick(2 * time.delta());
+                let current_jump_time = player_movement.timer.elapsed().as_secs_f32();
+                let total_jump_time = player_movement.timer.duration().as_secs_f32();
+                let jump_percent = current_jump_time / total_jump_time;
+                player_movement.y_per_second = 600. * (1. - jump_percent);
+            } else {
+                let d = (MAXIMUM_DOWNWARD_VELOCITY
+                    - (player_movement.y_per_second + MAXIMUM_DOWNWARD_VELOCITY))
+                    / MAXIMUM_DOWNWARD_VELOCITY;
+                if player_movement.y_per_second > 0. {
+                    player_movement.y_per_second = 0.0;
+                } else if player_movement.y_per_second > -MAXIMUM_DOWNWARD_VELOCITY {
+                    player_movement.y_per_second +=
+                        CHARACTER_DOWNWARD_VELOCITY_PER_FRAME * time.delta_seconds() * d.cos();
+                }
+            }
         }
     }
 }
 
 fn translate_player_system(
     time: Res<Time>,
-    mut player_query: Query<(&mut KinematicCharacterController, &mut TrajectoryVelocity)>,
+    mut player_query: Query<(&mut KinematicCharacterController, &mut PlayerMovement)>,
 ) {
     for (mut transform, mut trajectory_velocity) in player_query.iter_mut() {
         transform.translation = Some(Vec2::new(
@@ -322,7 +341,7 @@ fn keyboard_input_system(
             &mut KinematicCharacterController,
             &mut TextureAtlas,
             &mut Sprite,
-            &mut TrajectoryVelocity,
+            &mut PlayerMovement,
         ),
         With<ActivePlayer>,
     >,
@@ -356,9 +375,9 @@ fn keyboard_input_system(
     //     None => 0.0,
     // };
 
-    // let jump_key_just_pressed = button_inputs
-    //     .just_pressed(GamepadButton::new(gamepad, GamepadButtonType::South))
-    //     || keyboard_input.just_pressed(KeyCode::Space);
+    let jump_key_pressed = button_inputs
+        .pressed(GamepadButton::new(gamepad, GamepadButtonType::South))
+        || keyboard_input.pressed(KeyCode::Space);
     let jump_key_just_pressed = button_inputs
         .just_pressed(GamepadButton::new(gamepad, GamepadButtonType::South))
         || keyboard_input.just_pressed(KeyCode::Space);
@@ -388,8 +407,11 @@ fn keyboard_input_system(
         mut transform,
         mut texture_atlas,
         mut sprite_image,
-        mut trajectory_velocity,
+        mut player_movement,
     ) = active_player_query.single_mut();
+
+    let mut total_x = 0.;
+    let mut total_y = 0.;
 
     let mut grounded = match active_player_kinematic_output_query
         .iter()
@@ -399,8 +421,48 @@ fn keyboard_input_system(
         None => false,
     };
 
-    let mut total_x = 0.;
-    let mut total_y = 0.;
+    if jump_key_just_pressed {
+        // Checks for dialog
+        *game_phase = GamePhase::Dialog;
+        if grounded && player_movement.is_jump_reset {
+            // player can now jump
+            player_movement.timer.reset();
+            player_movement.airborne = true;
+            player_movement.falling = false;
+            player_movement.is_jump_reset = false;
+            total_y = 600.0;
+        }
+    } else if jump_key_pressed {
+        if player_movement.airborne && player_movement.timer.finished() {
+            player_movement.falling = true;
+        }
+
+        if player_movement.airborne && !player_movement.timer.finished() {
+            player_movement.timer.tick(time.delta());
+
+            let current_jump_time = player_movement.timer.elapsed().as_secs_f32();
+            let total_jump_time = player_movement.timer.duration().as_secs_f32();
+            let jump_percent = current_jump_time / total_jump_time;
+            total_y = 600. * (1. - jump_percent);
+        }
+    }
+
+    if !jump_key_pressed {
+        if player_movement.airborne && !player_movement.timer.finished() {
+            player_movement.timer.tick(2 * time.delta());
+            let current_jump_time = player_movement.timer.elapsed().as_secs_f32();
+            let total_jump_time = player_movement.timer.duration().as_secs_f32();
+            let jump_percent = current_jump_time / total_jump_time;
+            total_y = 600. * (1. - jump_percent);
+        } else {
+            player_movement.falling = true;
+        }
+
+        if grounded {
+            player_movement.is_jump_reset = true;
+        }
+    }
+
     if left_key_pressed {
         // let x = transform.translation.x - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         // if x > -600. + 20. {
@@ -441,14 +503,13 @@ fn keyboard_input_system(
             }
         });
         total_x = 0.;
+        player_movement.falling = true;
     }
 
-    if jump_key_just_pressed {
-        *game_phase = GamePhase::Dialog;
+    if !player_movement.falling {
+        player_movement.y_per_second = total_y;
     }
-
-    trajectory_velocity.y_per_second += total_y;
-    trajectory_velocity.x_per_second = total_x;
+    player_movement.x_per_second = total_x;
 }
 
 fn dialog_system(
@@ -473,7 +534,7 @@ fn dialog_system(
         .filter(|(_, _, t)| {
             (t.translation.x - player_position.translation.x).abs()
                 + (t.translation.y - player_position.translation.y).abs()
-                < 160.
+                < 100.
         })
         .map(|(e, d, t)| {
             (
