@@ -37,8 +37,15 @@ struct PlayerMovement {
 
 #[derive(Component)]
 pub struct ActivePlayer;
+
 #[derive(Component)]
 pub struct Cloud;
+
+#[derive(Component)]
+pub struct Wind {
+    x: f32,
+    y: f32,
+}
 
 #[derive(Component)]
 pub struct DialogBox;
@@ -187,6 +194,7 @@ pub fn setup(
     commands.spawn((
         Game,
         Cloud,
+        Wind { x: 73.5, y: 0. },
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
@@ -202,6 +210,7 @@ pub fn setup(
     commands.spawn((
         Game,
         Cloud,
+        Wind { x: 70., y: 0. },
         Dialog {
             image: asset_server.load("cloudguy.png"),
             dialog: Text {
@@ -273,12 +282,12 @@ pub fn setup(
     ));
 }
 
-fn cloud_movement(time: Res<Time>, mut clouds: Query<(&mut Transform), With<Cloud>>) {
-    for mut transform in clouds.iter_mut() {
+fn cloud_movement(time: Res<Time>, mut clouds: Query<(&mut Transform, &Wind), With<Cloud>>) {
+    for (mut transform, wind) in clouds.iter_mut() {
         if transform.translation.x < -680.0 {
             transform.translation.x = 680.
         }
-        transform.translation.x -= 80. * time.delta_seconds();
+        transform.translation.x -= wind.x * time.delta_seconds();
     }
 }
 
@@ -520,7 +529,10 @@ fn dialog_system(
     mut dialog_query: Query<(Entity, &Dialog, &Transform)>,
     mut selected_text_query: Query<Entity, With<TextIndicatorParentSelector>>,
     mut text_indicator_query: Query<Entity, With<TextIndicator>>,
-    active_player_query: Query<(&Transform), (With<Player>, With<ActivePlayer>)>,
+    mut active_player_query: Query<
+        ((&Transform, &mut PlayerMovement)),
+        (With<Player>, With<ActivePlayer>),
+    >,
 ) {
     if *game_phase != GamePhase::Dialog {
         for entity in &open_dialog {
@@ -528,7 +540,7 @@ fn dialog_system(
         }
     }
 
-    let player_position = active_player_query.single();
+    let (player_position, mut player_movement) = active_player_query.single_mut();
     let mut dialogs = dialog_query
         .iter()
         .filter(|(_, _, t)| {
@@ -550,7 +562,10 @@ fn dialog_system(
     dialogs.sort_by(|(_, _, _, a), (_, _, _, b)| a.total_cmp(b));
 
     let (mut entity, dialog, _, _) = match dialogs.first() {
-        Some(d) => d,
+        Some(d) => {
+            player_movement.is_jump_reset = false;
+            d
+        }
         None => {
             for entity in text_indicator_query.iter_mut() {
                 commands.entity(entity).despawn();
