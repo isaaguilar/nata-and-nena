@@ -68,8 +68,6 @@ fn splash_setup(
             },));
         });
 
-    commands.insert_resource(SplashTimer(Timer::from_seconds(1.0, TimerMode::Once)));
-
     commands.spawn((
         RenderLayers::layer(2),
         OnSplashScreen,
@@ -91,6 +89,8 @@ fn splash_setup(
             ..default()
         }),
     ));
+
+    commands.insert_resource(SplashTimer(Timer::from_seconds(1.0, TimerMode::Once)));
 }
 
 fn countdown(

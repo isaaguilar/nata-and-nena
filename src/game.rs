@@ -11,6 +11,8 @@ use bevy_rapier2d::prelude::*;
 use rand::prelude::Rng;
 use std::collections::HashMap;
 
+const PLAYER_SPRITE_SIZE_Y: f32 = 50.;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
 enum GamePhase {
     #[default]
@@ -29,7 +31,7 @@ pub struct GustTimer(Timer);
 pub struct Game;
 
 #[derive(Component)]
-pub struct Player;
+pub struct Player(usize);
 
 #[derive(Component, Default)]
 struct PlayerMovement {
@@ -72,6 +74,14 @@ pub struct WindGust {
 }
 
 #[derive(Component)]
+pub struct Platform {
+    height: f32,
+}
+
+#[derive(Component)]
+pub struct Solid;
+
+#[derive(Component)]
 pub struct MovingPlatform {
     pub lifetime_in_seconds: Timer,
     pub velocity: Vec2,
@@ -103,7 +113,7 @@ pub fn setup(
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
 
     commands.spawn((
-        Player,
+        Player(1),
         PlayerMovement {
             timer: Timer::from_seconds(0.4, TimerMode::Once),
             falling: true,
@@ -111,7 +121,13 @@ pub fn setup(
         },
         ActivePlayer,
         Collider::cuboid(20.0, 25.),
-        KinematicCharacterController::default(),
+        KinematicCharacterController {
+            filter_groups: Some(CollisionGroups::new(
+                Group::ALL,
+                Group::from_iter([Group::GROUP_11]),
+            )),
+            ..default()
+        },
         Game,
         TextureAtlas {
             layout: texture_atlas_layout.clone(),
@@ -143,14 +159,20 @@ pub fn setup(
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
 
     commands.spawn((
-        Player,
+        Player(2),
         PlayerMovement {
             timer: Timer::from_seconds(0.4, TimerMode::Once),
             falling: true,
             ..default()
         },
         Collider::cuboid(20.0, 25.0),
-        KinematicCharacterController::default(),
+        KinematicCharacterController {
+            filter_groups: Some(CollisionGroups::new(
+                Group::ALL,
+                Group::from_iter([Group::GROUP_12]),
+            )),
+            ..default()
+        },
         Game,
         TextureAtlas {
             layout: texture_atlas_layout.clone(),
@@ -192,10 +214,28 @@ pub fn setup(
         Cloud {
             velocity: Vec2::new(73.5, 0.0),
         },
+        RigidBody::KinematicPositionBased,
+        Collider::cuboid(20., 10.0),
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
                 translation: Vec3::new(0.0, -110.0, 0.0),
+                ..default()
+            },
+            ..default()
+        },
+    ));
+
+    let texture_handle = asset_server.load("cloudplatform.png");
+
+    commands.spawn((
+        Game,
+        RigidBody::Fixed,
+        Collider::cuboid(196.0, 28.5),
+        SpriteBundle {
+            texture: texture_handle.clone(),
+            transform: Transform {
+                translation: Vec3::new(-404., 200.0, -1.0),
                 ..default()
             },
             ..default()
@@ -209,16 +249,8 @@ pub fn setup(
         Cloud {
             velocity: Vec2::new(70., 0.),
         },
-        Dialog {
-            image: asset_server.load("cloudguy.png"),
-            dialog: Text {
-                sections: vec![TextSection {
-                    value: String::from("Hello, Julien."),
-                    style: text_style.clone(),
-                }],
-                ..default()
-            },
-        },
+        RigidBody::KinematicPositionBased,
+        Collider::cuboid(56.5, 25.0),
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
@@ -278,6 +310,72 @@ pub fn setup(
             ..default()
         },
     ));
+
+    let half_x = 20.;
+    let half_y = 20.;
+    commands.spawn((
+        Game,
+        Collider::cuboid(half_x, half_y),
+        RigidBody::Fixed,
+        TransformBundle::from_transform(Transform {
+            translation: Vec3::new(-500., -680.0, 0.),
+            ..default()
+        }),
+        CollisionGroups::new(Group::from_iter([Group::GROUP_10]), Group::ALL),
+    ));
+
+    commands.spawn((
+        Game,
+        Collider::cuboid(half_x, half_y),
+        RigidBody::Fixed,
+        TransformBundle::from_transform(Transform {
+            translation: Vec3::new(-400., -680.0, 0.),
+            ..default()
+        }),
+        CollisionGroups::new(Group::from_iter([Group::GROUP_11]), Group::ALL),
+    ));
+
+    commands.spawn((
+        Game,
+        Collider::cuboid(half_x, half_y),
+        RigidBody::Fixed,
+        TransformBundle::from_transform(Transform {
+            translation: Vec3::new(-300., -680.0, 0.),
+            ..default()
+        }),
+        CollisionGroups::new(
+            Group::from_iter([Group::GROUP_12, Group::GROUP_13]),
+            Group::ALL,
+        ),
+    ));
+}
+
+pub fn platform_sensor_system(
+    mut commands: Commands,
+    player: Query<(Entity, &Player, &Transform, &KinematicCharacterController), With<Player>>,
+    rapier_context: Res<RapierContext>,
+    mut platform_query: Query<
+        (Entity, &GlobalTransform, &Platform, &mut CollisionGroups),
+        (Without<Player>, With<Platform>),
+    >,
+) {
+    for (player_entity, _player, player_transform, kinematic_controller) in player.iter() {
+        let player_bottom = player_transform.translation.y - (PLAYER_SPRITE_SIZE_Y);
+
+        let filter_groups = kinematic_controller.filter_groups.unwrap().filters;
+
+        for (platform_entity, platform_transform, platform, mut platform_collision_groups) in
+            platform_query.iter_mut()
+        {
+            let platform_height = platform_transform.translation().y - platform.height;
+
+            if player_bottom >= platform_height {
+                platform_collision_groups.memberships.insert(filter_groups);
+            } else {
+                platform_collision_groups.memberships.remove(filter_groups);
+            }
+        }
+    }
 }
 
 fn cloud_movement(time: Res<Time>, mut clouds: Query<(&mut Transform, &Cloud), With<Cloud>>) {
@@ -306,8 +404,7 @@ fn gust_system(
 ) {
     gust_timer.tick(time.delta());
     if gust_timer.just_finished() {
-        // random
-        if rng.gen_range(0..1) == 0 {
+        if rng.gen_range(0..=1) == 0 {
             let texture_handle = asset_server.load("wind1-Sheet.png");
             let layout = TextureAtlasLayout::from_grid(
                 UVec2::new(80, 107),
@@ -355,6 +452,8 @@ fn gust_system(
                         Game,
                         RigidBody::KinematicPositionBased,
                         Collider::cuboid(50.0, 2.0),
+                        Platform { height: 51.5 }, // sprite_center as(107/2) - half_y as(2.0)
+                        CollisionGroups::new(Group::GROUP_10, Group::ALL),
                         TransformBundle::from_transform(Transform {
                             translation: Vec3::new(0., 40.0, -9.0),
                             ..default()
@@ -769,6 +868,7 @@ impl Plugin for PlatformPlugin {
                     player_gravity_system,
                     translate_player_system,
                     cloud_movement,
+                    platform_sensor_system,
                     gust_system,
                     dialog_system,
                 )
