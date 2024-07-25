@@ -54,7 +54,7 @@ pub fn camera_tracking_system(
         v += a * time.delta_seconds();
         let y = v * time.delta_seconds();
         let final_y = player_y + y;
-        if final_y > -375. && final_y < 10850. {
+        if final_y > -425. && final_y < 10850. {
             camera_transform.translation.y = final_y;
         }
     }

@@ -1,4 +1,6 @@
 use bevy::prelude::*;
+use bevy_prng::ChaCha8Rng;
+use bevy_rand::prelude::EntropyPlugin;
 use bevy_rapier2d::prelude::*;
 mod camera;
 mod camera_tracking;
@@ -46,7 +48,8 @@ fn main() {
         .add_plugins((setup::WindowSetup, camera::CameraPlugin))
         .add_systems(PreUpdate, (close_on_esc))
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
-        .add_plugins(RapierDebugRenderPlugin::default())
+        .add_plugins(EntropyPlugin::<ChaCha8Rng>::default())
+        // .add_plugins(RapierDebugRenderPlugin::default())
         .init_state::<AppState>()
         .add_plugins((splash::SplashPlugin, game::PlatformPlugin))
         .run();

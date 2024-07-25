@@ -5,7 +5,10 @@ use crate::{
     CHARACTER_DOWNWARD_VELOCITY_PER_FRAME, MAXIMUM_DOWNWARD_VELOCITY, PLAYER_MOVEMENT_SPEED,
 };
 use bevy::{prelude::*, render::texture::ImageLoader};
+use bevy_prng::ChaCha8Rng;
+use bevy_rand::resource::GlobalEntropy;
 use bevy_rapier2d::prelude::*;
+use rand::prelude::Rng;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
@@ -18,6 +21,9 @@ enum GamePhase {
     Middle,
     End,
 }
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct GustTimer(Timer);
 
 #[derive(Component)]
 pub struct Game;
@@ -39,12 +45,8 @@ struct PlayerMovement {
 pub struct ActivePlayer;
 
 #[derive(Component)]
-pub struct Cloud;
-
-#[derive(Component)]
-pub struct Wind {
-    x: f32,
-    y: f32,
+pub struct Cloud {
+    velocity: Vec2,
 }
 
 #[derive(Component)]
@@ -62,13 +64,18 @@ pub struct Dialog {
     pub dialog: Text,
 }
 
-pub enum DirectionEnum {
-    Vertical,
-    Horizontal,
+#[derive(Component)]
+pub struct WindGust {
+    timer: Timer,
+    quarter_lifetime_in_seconds: Timer,
+    current_quarter: usize,
 }
 
 #[derive(Component)]
-pub struct MovingPlatform(pub DirectionEnum);
+pub struct MovingPlatform {
+    pub lifetime_in_seconds: Timer,
+    pub velocity: Vec2,
+}
 
 // TODO add a timer
 // TODO add a point resource
@@ -178,23 +185,13 @@ pub fn setup(
         ),
     ));
 
-    commands.spawn((
-        Game,
-        MovingPlatform(DirectionEnum::Vertical),
-        RigidBody::KinematicPositionBased,
-        Collider::cuboid(50.0, 2.0),
-        TransformBundle::from_transform(Transform {
-            translation: Vec3::new(200.0, -600.0, 10.0),
-            ..default()
-        }),
-    ));
-
     let texture_handle = asset_server.load("cloud1.png");
 
     commands.spawn((
         Game,
-        Cloud,
-        Wind { x: 73.5, y: 0. },
+        Cloud {
+            velocity: Vec2::new(73.5, 0.0),
+        },
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
@@ -209,8 +206,9 @@ pub fn setup(
 
     commands.spawn((
         Game,
-        Cloud,
-        Wind { x: 70., y: 0. },
+        Cloud {
+            velocity: Vec2::new(70., 0.),
+        },
         Dialog {
             image: asset_server.load("cloudguy.png"),
             dialog: Text {
@@ -265,7 +263,7 @@ pub fn setup(
             image: texture_handle.clone(),
             dialog: Text {
                 sections: vec![TextSection {
-                    value: String::from("Hello, Frankie."),
+                    value: String::from("Hello, Frankie.\nHere is a random number:"),
                     style: text_style.clone(),
                 }],
                 ..default()
@@ -282,21 +280,116 @@ pub fn setup(
     ));
 }
 
-fn cloud_movement(time: Res<Time>, mut clouds: Query<(&mut Transform, &Wind), With<Cloud>>) {
+fn cloud_movement(time: Res<Time>, mut clouds: Query<(&mut Transform, &Cloud), With<Cloud>>) {
     for (mut transform, wind) in clouds.iter_mut() {
         if transform.translation.x < -680.0 {
             transform.translation.x = 680.
         }
-        transform.translation.x -= wind.x * time.delta_seconds();
+        transform.translation.x -= wind.velocity.x * time.delta_seconds();
     }
 }
 
-fn platform_movement(
+fn gust_system(
+    mut commands: Commands,
     time: Res<Time>,
-    mut platform_query: Query<&mut Transform, With<MovingPlatform>>,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    mut gust_timer: ResMut<GustTimer>,
+    mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
+    mut platform_query: Query<(
+        Entity,
+        &mut Transform,
+        &mut MovingPlatform,
+        &mut TextureAtlas,
+        &mut WindGust,
+    )>,
 ) {
-    for mut transform in platform_query.iter_mut() {
-        transform.translation.y += 10.0 * time.delta_seconds();
+    gust_timer.tick(time.delta());
+    if gust_timer.just_finished() {
+        // random
+        if rng.gen_range(0..1) == 0 {
+            let texture_handle = asset_server.load("wind1-Sheet.png");
+            let layout = TextureAtlasLayout::from_grid(
+                UVec2::new(80, 107),
+                9,
+                4,
+                Some(UVec2::new(0, 0)),
+                Some(UVec2::new(0, 0)),
+            );
+
+            let texture_atlas_layout = texture_atlas_layouts.add(layout);
+            let lifetime_in_seconds = rng.gen_range(15.0..20.0);
+            commands
+                .spawn((
+                    Game,
+                    MovingPlatform {
+                        lifetime_in_seconds: Timer::from_seconds(
+                            lifetime_in_seconds,
+                            TimerMode::Once,
+                        ),
+                        velocity: Vec2::new(0.0, rng.gen_range(20.0..60.0)),
+                    },
+                    WindGust {
+                        timer: Timer::from_seconds(0.15, TimerMode::Repeating),
+                        quarter_lifetime_in_seconds: Timer::from_seconds(
+                            lifetime_in_seconds / 4.0,
+                            TimerMode::Repeating,
+                        ),
+                        current_quarter: 1,
+                    },
+                    TextureAtlas {
+                        layout: texture_atlas_layout,
+                        index: rng.gen_range(0..9),
+                    },
+                    SpriteBundle {
+                        texture: texture_handle,
+                        transform: Transform {
+                            translation: Vec3::new(rng.gen_range(-600.0..600.0), -700.0, 10.0),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                ))
+                .with_children(|child| {
+                    child.spawn((
+                        Game,
+                        RigidBody::KinematicPositionBased,
+                        Collider::cuboid(50.0, 2.0),
+                        TransformBundle::from_transform(Transform {
+                            translation: Vec3::new(0., 40.0, -9.0),
+                            ..default()
+                        }),
+                    ));
+                });
+        }
+    }
+
+    for (entity, mut transform, mut moving_platform, mut atlas, mut gust) in
+        platform_query.iter_mut()
+    {
+        moving_platform.lifetime_in_seconds.tick(time.delta());
+        gust.timer.tick(time.delta());
+        gust.quarter_lifetime_in_seconds.tick(time.delta());
+
+        if moving_platform.lifetime_in_seconds.just_finished() {
+            commands.entity(entity).despawn_recursive();
+        } else {
+            transform.translation.x += moving_platform.velocity.x * time.delta_seconds();
+            transform.translation.y += moving_platform.velocity.y * time.delta_seconds();
+
+            if gust.quarter_lifetime_in_seconds.just_finished() {
+                if gust.current_quarter < 4 {
+                    gust.current_quarter += 1;
+                }
+            }
+            if gust.timer.just_finished() {
+                if atlas.index >= 8 * gust.current_quarter + gust.current_quarter - 1 {
+                    atlas.index = 9 * gust.current_quarter - 9;
+                } else {
+                    atlas.index += 1;
+                }
+            }
+        }
     }
 }
 
@@ -525,6 +618,7 @@ fn dialog_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut game_phase: ResMut<GamePhase>,
+    mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
     open_dialog: Query<Entity, With<DialogBox>>,
     mut dialog_query: Query<(Entity, &Dialog, &Transform)>,
     mut selected_text_query: Query<Entity, With<TextIndicatorParentSelector>>,
@@ -639,7 +733,11 @@ fn dialog_system(
                     });
                     child.spawn(
                         TextBundle::from_section(
-                            dialog.dialog.sections[0].value.clone(),
+                            format!(
+                                "{}{}",
+                                dialog.dialog.sections[0].value.clone(),
+                                rng.gen_range(0..=100)
+                            ),
                             dialog.dialog.sections[0].style.clone(),
                         )
                         .with_text_justify(JustifyText::Left)
@@ -662,6 +760,7 @@ impl Plugin for PlatformPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(AppState::Game), (setup))
             .init_resource::<GamePhase>()
+            .insert_resource(GustTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
             .add_systems(PreUpdate, camera_tracking::camera_tracking_system)
             .add_systems(
                 Update,
@@ -670,7 +769,7 @@ impl Plugin for PlatformPlugin {
                     player_gravity_system,
                     translate_player_system,
                     cloud_movement,
-                    platform_movement,
+                    gust_system,
                     dialog_system,
                 )
                     .run_if(in_state(AppState::Game)),
