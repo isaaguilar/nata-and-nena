@@ -10,6 +10,7 @@ use bevy_rand::resource::GlobalEntropy;
 use bevy_rapier2d::prelude::*;
 use rand::prelude::Rng;
 use std::collections::HashMap;
+use std::ops::Range;
 
 const PLAYER_SPRITE_SIZE_Y: f32 = 50.;
 
@@ -23,6 +24,28 @@ enum GamePhase {
     Middle,
     End,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
+enum DevPhase {
+    #[default]
+    Play,
+    Debug,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
+pub struct WaterCollection {
+    total_player1: u32,
+    total_player2: u32,
+}
+
+// #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
+// pub struct IceCollection(pub u32);
+
+// #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
+// pub struct Score(pub u32);
+
+// #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
+// pub struct Altitude(pub u32);
 
 #[derive(Resource, Deref, DerefMut)]
 pub struct GustTimer(Timer);
@@ -46,8 +69,35 @@ struct PlayerMovement {
 #[derive(Component)]
 pub struct ActivePlayer;
 
+#[derive(Component, Default)]
+pub struct CloudSpawner {
+    image: Handle<Image>,
+    group: usize,
+    min_velocity: Vec2,
+    max_velocity: Vec2,
+    min_height: f32,
+    max_height: f32,
+    min_time: Timer,
+    max_time: Timer,
+    retry_time: Timer,
+    probability: Range<i32>,
+    collider: Collider,
+}
+
+#[derive(Component, Default)]
+pub struct WaterCollectableSpawner {
+    image: Handle<Image>,
+    min_height: f32,
+    max_height: f32,
+    min_time: Timer,
+    max_time: Timer,
+    retry_time: Timer,
+    probability: Range<i32>,
+}
+
 #[derive(Component)]
 pub struct Cloud {
+    group: usize,
     velocity: Vec2,
 }
 
@@ -74,12 +124,16 @@ pub struct WindGust {
 }
 
 #[derive(Component)]
+pub struct WaterCollectable(Timer);
+
+#[derive(Component)]
 pub struct Platform {
-    height: f32,
+    // generally half of player sprite
+    height_adjustment: f32,
 }
 
 #[derive(Component)]
-pub struct Solid;
+pub struct Scoreboard;
 
 #[derive(Component)]
 pub struct MovingPlatform {
@@ -87,12 +141,10 @@ pub struct MovingPlatform {
     pub velocity: Vec2,
 }
 
-// TODO add a timer
-// TODO add a point resource
-
 pub fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
     let text_style = TextStyle {
@@ -100,97 +152,6 @@ pub fn setup(
         font_size: 18.0,
         ..default()
     };
-
-    let texture_handle = asset_server.load("person.png");
-    let layout = TextureAtlasLayout::from_grid(
-        UVec2::new(40, 50),
-        1,
-        1,
-        Some(UVec2::new(0, 0)),
-        Some(UVec2::new(0, 0)),
-    );
-
-    let texture_atlas_layout = texture_atlas_layouts.add(layout);
-
-    commands.spawn((
-        Player(1),
-        PlayerMovement {
-            timer: Timer::from_seconds(0.4, TimerMode::Once),
-            falling: true,
-            ..default()
-        },
-        ActivePlayer,
-        Collider::cuboid(20.0, 25.),
-        KinematicCharacterController {
-            filter_groups: Some(CollisionGroups::new(
-                Group::ALL,
-                Group::from_iter([Group::GROUP_11]),
-            )),
-            ..default()
-        },
-        Game,
-        TextureAtlas {
-            layout: texture_atlas_layout.clone(),
-            index: 0,
-        },
-        SpriteBundle {
-            texture: texture_handle.clone(),
-            transform: Transform {
-                translation: Vec3::new(210.0, -400.0, 10.0),
-                ..default()
-            },
-            sprite: Sprite {
-                flip_x: false,
-                ..default()
-            },
-            ..default()
-        },
-    ));
-
-    let texture_handle = asset_server.load("person2.png");
-    let layout = TextureAtlasLayout::from_grid(
-        UVec2::new(40, 50),
-        1,
-        1,
-        Some(UVec2::new(0, 0)),
-        Some(UVec2::new(0, 0)),
-    );
-
-    let texture_atlas_layout = texture_atlas_layouts.add(layout);
-
-    commands.spawn((
-        Player(2),
-        PlayerMovement {
-            timer: Timer::from_seconds(0.4, TimerMode::Once),
-            falling: true,
-            ..default()
-        },
-        Collider::cuboid(20.0, 25.0),
-        KinematicCharacterController {
-            filter_groups: Some(CollisionGroups::new(
-                Group::ALL,
-                Group::from_iter([Group::GROUP_12]),
-            )),
-            ..default()
-        },
-        Game,
-        TextureAtlas {
-            layout: texture_atlas_layout.clone(),
-            index: 0,
-        },
-        SpriteBundle {
-            texture: texture_handle.clone(),
-            transform: Transform {
-                translation: Vec3::new(-100.0, -300.0, 10.0),
-                ..default()
-            },
-            sprite: Sprite {
-                flip_x: false,
-                ..default()
-            },
-            ..default()
-        },
-    ));
 
     commands.spawn((
         Game,
@@ -207,31 +168,217 @@ pub fn setup(
         ),
     ));
 
-    let texture_handle = asset_server.load("cloud1.png");
-
-    commands.spawn((
-        Game,
-        Cloud {
-            velocity: Vec2::new(73.5, 0.0),
-        },
-        RigidBody::KinematicPositionBased,
-        Collider::cuboid(20., 10.0),
-        SpriteBundle {
-            texture: texture_handle.clone(),
-            transform: Transform {
-                translation: Vec3::new(0.0, -110.0, 0.0),
+    let texture_handle = asset_server.load("person.png");
+    let layout = TextureAtlasLayout::from_grid(
+        UVec2::new(40, 50),
+        1,
+        1,
+        Some(UVec2::new(0, 0)),
+        Some(UVec2::new(0, 0)),
+    );
+    let texture_atlas_layout = texture_atlas_layouts.add(layout);
+    commands
+        .spawn((
+            Player(1),
+            PlayerMovement {
+                timer: Timer::from_seconds(0.4, TimerMode::Once),
+                falling: true,
                 ..default()
             },
-            ..default()
-        },
-    ));
+            ActivePlayer,
+            Collider::cuboid(20.0, 25.),
+            KinematicCharacterController {
+                filter_groups: Some(CollisionGroups::new(
+                    Group::ALL,
+                    Group::from_iter([Group::GROUP_11]),
+                )),
+                ..default()
+            },
+            Game,
+            TextureAtlas {
+                layout: texture_atlas_layout.clone(),
+                index: 0,
+            },
+            SpriteBundle {
+                texture: texture_handle.clone(),
+                transform: Transform {
+                    translation: Vec3::new(210.0, -400.0, 10.0),
+                    ..default()
+                },
+                sprite: Sprite {
+                    flip_x: false,
+                    ..default()
+                },
+                ..default()
+            },
+        ))
+        .insert(ActiveEvents::COLLISION_EVENTS);
+
+    let texture_handle = asset_server.load("person2.png");
+    let layout = TextureAtlasLayout::from_grid(
+        UVec2::new(40, 50),
+        1,
+        1,
+        Some(UVec2::new(0, 0)),
+        Some(UVec2::new(0, 0)),
+    );
+    let texture_atlas_layout = texture_atlas_layouts.add(layout);
+    commands
+        .spawn((
+            Player(2),
+            PlayerMovement {
+                timer: Timer::from_seconds(0.4, TimerMode::Once),
+                falling: true,
+                ..default()
+            },
+            Collider::cuboid(20.0, 25.0),
+            KinematicCharacterController {
+                filter_groups: Some(CollisionGroups::new(
+                    Group::ALL,
+                    Group::from_iter([Group::GROUP_12]),
+                )),
+                ..default()
+            },
+            Game,
+            TextureAtlas {
+                layout: texture_atlas_layout.clone(),
+                index: 0,
+            },
+            SpriteBundle {
+                texture: texture_handle.clone(),
+                transform: Transform {
+                    translation: Vec3::new(-100.0, -300.0, 10.0),
+                    ..default()
+                },
+                sprite: Sprite {
+                    flip_x: false,
+                    ..default()
+                },
+                ..default()
+            },
+        ))
+        .insert(ActiveEvents::COLLISION_EVENTS);
+
+    commands.spawn(CloudSpawner {
+        image: asset_server.load("raincloud.png"),
+        group: 0,
+        min_velocity: Vec2::new(5.0, 0.),
+        max_velocity: Vec2::new(55.0, 0.),
+        min_height: -250.,
+        max_height: -160.,
+        min_time: Timer::from_seconds(2.5, TimerMode::Once),
+        max_time: Timer::from_seconds(10., TimerMode::Once),
+        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+        probability: Range { start: 1, end: 200 },
+        collider: Collider::cuboid(56.5, 25.0),
+        ..default()
+    });
+
+    commands.spawn(CloudSpawner {
+        image: asset_server.load("cloud1.png"),
+
+        group: 1,
+        min_height: -150.,
+        max_height: 0.,
+        min_velocity: Vec2::new(10.0, 0.),
+        max_velocity: Vec2::new(75.0, 0.),
+        min_time: Timer::from_seconds(0.5, TimerMode::Once),
+        max_time: Timer::from_seconds(5., TimerMode::Once),
+        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+        probability: Range { start: 1, end: 60 },
+        collider: Collider::cuboid(20., 10.0),
+        ..default()
+    });
+    commands.spawn(WaterCollectableSpawner {
+        image: asset_server.load("droplet.png"),
+        // atlas: TextureAtlas {
+        //     layout: texture_atlas_layouts.add(TextureAtlasLayout::from_grid(
+        //         UVec2::new(20, 20),
+        //         1,
+        //         1,
+        //         Some(UVec2::new(0, 0)),
+        //         Some(UVec2::new(0, 0)),
+        //     )),
+        //     index: rng.gen_range(0..1),
+        // },
+        // grid: GridOptions { rows: 1, cols: 1 },
+        min_height: -350.,
+        max_height: 200.,
+
+        min_time: Timer::from_seconds(5.0, TimerMode::Once),
+        max_time: Timer::from_seconds(60., TimerMode::Once),
+        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+        probability: Range { start: 1, end: 20 },
+        // collider: Collider::cuboid(10., 10.0),
+    });
+
+    commands.spawn(CloudSpawner {
+        image: asset_server.load("raincloud.png"),
+        group: 1,
+        min_velocity: Vec2::new(55.0, 0.),
+        max_velocity: Vec2::new(59.0, 0.),
+        min_height: 300.,
+        max_height: 400.,
+        min_time: Timer::from_seconds(2.5, TimerMode::Once),
+        max_time: Timer::from_seconds(6., TimerMode::Once),
+        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+        probability: Range { start: 1, end: 60 },
+        collider: Collider::cuboid(56.5, 25.0),
+        ..default()
+    });
+
+    commands.spawn(CloudSpawner {
+        image: asset_server.load("cloud1.png"),
+        group: 1,
+        min_height: 600.,
+        max_height: 700.,
+        min_velocity: Vec2::new(75.0, 0.),
+        max_velocity: Vec2::new(79.0, 0.),
+        min_time: Timer::from_seconds(0.5, TimerMode::Once),
+        max_time: Timer::from_seconds(2.5, TimerMode::Once),
+        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+        probability: Range { start: 1, end: 20 },
+        collider: Collider::cuboid(20., 10.0),
+        ..default()
+    });
+    commands.spawn(CloudSpawner {
+        image: asset_server.load("cloud1.png"),
+        group: 1,
+        min_height: 700.,
+        max_height: 800.,
+        min_velocity: Vec2::new(75.0, 0.),
+        max_velocity: Vec2::new(79.0, 0.),
+        min_time: Timer::from_seconds(0.5, TimerMode::Once),
+        max_time: Timer::from_seconds(3., TimerMode::Once),
+        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+        probability: Range { start: 1, end: 35 },
+        collider: Collider::cuboid(20., 10.0),
+        ..default()
+    });
+    commands.spawn(CloudSpawner {
+        image: asset_server.load("cloud1.png"),
+        group: 1,
+        min_height: 800.,
+        max_height: 1000.,
+        min_velocity: Vec2::new(75.0, 0.),
+        max_velocity: Vec2::new(79.0, 0.),
+        min_time: Timer::from_seconds(0.5, TimerMode::Once),
+        max_time: Timer::from_seconds(4., TimerMode::Once),
+        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+        probability: Range { start: 1, end: 50 },
+        collider: Collider::cuboid(20., 10.0),
+        ..default()
+    });
 
     let texture_handle = asset_server.load("cloudplatform.png");
-
     commands.spawn((
         Game,
         RigidBody::Fixed,
         Collider::cuboid(196.0, 28.5),
+        Platform {
+            height_adjustment: 28.0,
+        }, // sprite_center as(107/2) - half_y as(2.0)
+        CollisionGroups::new(Group::GROUP_10, Group::ALL),
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
@@ -242,19 +389,71 @@ pub fn setup(
         },
     ));
 
-    let texture_handle = asset_server.load("raincloud.png");
-
+    let texture_handle = asset_server.load("cloudplatform.png");
     commands.spawn((
         Game,
-        Cloud {
-            velocity: Vec2::new(70., 0.),
-        },
-        RigidBody::KinematicPositionBased,
-        Collider::cuboid(56.5, 25.0),
+        RigidBody::Fixed,
+        Collider::cuboid(196.0, 28.5),
+        Platform {
+            height_adjustment: 28.0,
+        }, // sprite_center as(107/2) - half_y as(2.0)
+        CollisionGroups::new(Group::GROUP_10, Group::ALL),
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
-                translation: Vec3::new(-200.0, -200.0, 0.0),
+                translation: Vec3::new(404., 500.0, -1.0),
+                ..default()
+            },
+            sprite: Sprite {
+                flip_y: true,
+                flip_x: true,
+                ..default()
+            },
+            ..default()
+        },
+    ));
+
+    let texture_handle = asset_server.load("mediumcloudplatform.png");
+    commands.spawn((
+        Game,
+        RigidBody::Fixed,
+        Collider::cuboid(250., 18.5),
+        Platform {
+            height_adjustment: 28.0,
+        }, // sprite_center as(107/2) - half_y as(2.0)
+        CollisionGroups::new(Group::GROUP_10, Group::ALL),
+        SpriteBundle {
+            texture: texture_handle.clone(),
+            transform: Transform {
+                translation: Vec3::new(375., 1050.0, -1.0),
+                ..default()
+            },
+            sprite: Sprite {
+                flip_y: true,
+                flip_x: true,
+                ..default()
+            },
+            ..default()
+        },
+    ));
+    let texture_handle = asset_server.load("mediumcloudplatform.png");
+    commands.spawn((
+        Game,
+        RigidBody::Fixed,
+        Collider::cuboid(250., 18.5),
+        Platform {
+            height_adjustment: 28.0,
+        }, // sprite_center as(107/2) - half_y as(2.0)
+        CollisionGroups::new(Group::GROUP_10, Group::ALL),
+        SpriteBundle {
+            texture: texture_handle.clone(),
+            transform: Transform {
+                translation: Vec3::new(-375., 1050.0, -1.0),
+                ..default()
+            },
+            sprite: Sprite {
+                flip_y: false,
+                flip_x: false,
                 ..default()
             },
             ..default()
@@ -287,6 +486,35 @@ pub fn setup(
         },
     ));
 
+    commands.spawn((
+        Scoreboard,
+        TextBundle::from_sections([
+            TextSection {
+                value: String::from("Water: "),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 12.5,
+                    ..default()
+                },
+            },
+            TextSection {
+                value: String::from("0"),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 12.5,
+                    ..default()
+                },
+            },
+        ])
+        .with_text_justify(JustifyText::Center)
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            top: Val::Percent(7.0),
+            left: Val::Percent(3.0),
+            ..default()
+        }),
+    ));
+
     let texture_handle = asset_server.load("chalchiuhtlicue-bust.png");
 
     commands.spawn((
@@ -310,44 +538,6 @@ pub fn setup(
             ..default()
         },
     ));
-
-    let half_x = 20.;
-    let half_y = 20.;
-    commands.spawn((
-        Game,
-        Collider::cuboid(half_x, half_y),
-        RigidBody::Fixed,
-        TransformBundle::from_transform(Transform {
-            translation: Vec3::new(-500., -680.0, 0.),
-            ..default()
-        }),
-        CollisionGroups::new(Group::from_iter([Group::GROUP_10]), Group::ALL),
-    ));
-
-    commands.spawn((
-        Game,
-        Collider::cuboid(half_x, half_y),
-        RigidBody::Fixed,
-        TransformBundle::from_transform(Transform {
-            translation: Vec3::new(-400., -680.0, 0.),
-            ..default()
-        }),
-        CollisionGroups::new(Group::from_iter([Group::GROUP_11]), Group::ALL),
-    ));
-
-    commands.spawn((
-        Game,
-        Collider::cuboid(half_x, half_y),
-        RigidBody::Fixed,
-        TransformBundle::from_transform(Transform {
-            translation: Vec3::new(-300., -680.0, 0.),
-            ..default()
-        }),
-        CollisionGroups::new(
-            Group::from_iter([Group::GROUP_12, Group::GROUP_13]),
-            Group::ALL,
-        ),
-    ));
 }
 
 pub fn platform_sensor_system(
@@ -367,7 +557,7 @@ pub fn platform_sensor_system(
         for (platform_entity, platform_transform, platform, mut platform_collision_groups) in
             platform_query.iter_mut()
         {
-            let platform_height = platform_transform.translation().y - platform.height;
+            let platform_height = platform_transform.translation().y - platform.height_adjustment;
 
             if player_bottom >= platform_height {
                 platform_collision_groups.memberships.insert(filter_groups);
@@ -378,10 +568,166 @@ pub fn platform_sensor_system(
     }
 }
 
-fn cloud_movement(time: Res<Time>, mut clouds: Query<(&mut Transform, &Cloud), With<Cloud>>) {
-    for (mut transform, wind) in clouds.iter_mut() {
+fn collectable_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    rapier_context: Res<RapierContext>,
+    mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
+    mut water_collection: ResMut<WaterCollection>,
+    mut water_collectable_spawner_query: Query<&mut WaterCollectableSpawner>,
+    mut water_collectable_query: Query<(Entity, &mut WaterCollectable), With<WaterCollectable>>,
+    player_query: Query<(Entity, &Player)>,
+    mut scoreboard_query: Query<&mut Text, With<Scoreboard>>,
+) {
+    for mut spawner in water_collectable_spawner_query.iter_mut() {
+        spawner.min_time.tick(time.delta());
+        spawner.max_time.tick(time.delta());
+        spawner.retry_time.tick(time.delta());
+
+        if spawner.min_time.just_finished() {
+            continue;
+        }
+
+        if spawner.min_time.finished() {
+            let make_spawn = if spawner.max_time.just_finished() {
+                true
+            } else {
+                if spawner.retry_time.just_finished() {
+                    rng.gen_range(spawner.probability.clone()) == 1
+                } else {
+                    false
+                }
+            };
+
+            if make_spawn {
+                spawner.min_time.reset();
+                spawner.max_time.reset();
+
+                commands
+                    .spawn((
+                        Game,
+                        WaterCollectable(Timer::from_seconds(30.0, TimerMode::Once)),
+                        Sensor,
+                        Collider::cuboid(10., 10.0),
+                        CollisionGroups::new(Group::GROUP_12 | Group::GROUP_13, Group::ALL),
+                        TextureAtlas {
+                            layout: texture_atlas_layouts.add(TextureAtlasLayout::from_grid(
+                                UVec2::new(20, 20),
+                                1,
+                                1,
+                                Some(UVec2::new(0, 0)),
+                                Some(UVec2::new(0, 0)),
+                            )),
+                            index: rng.gen_range(0..1),
+                        },
+                        SpriteBundle {
+                            texture: spawner.image.clone(),
+                            transform: Transform {
+                                translation: Vec3::new(
+                                    rng.gen_range(-580.0..=580.0),
+                                    rng.gen_range(spawner.min_height..spawner.max_height),
+                                    0.0,
+                                ),
+                                ..default()
+                            },
+                            ..default()
+                        },
+                    ))
+                    .insert(ActiveEvents::COLLISION_EVENTS);
+            }
+        }
+    }
+    for (entity, mut water_collectable) in water_collectable_query.iter_mut() {
+        water_collectable.0.tick(time.delta());
+        if water_collectable.0.just_finished() {
+            commands.entity(entity).despawn_recursive();
+            continue;
+        }
+        for (player_entity, player) in player_query.iter() {
+            if rapier_context.intersection_pair(entity, player_entity) == Some(true) {
+                if player.0 == 1 {
+                    water_collection.total_player1 += 1;
+                } else {
+                    water_collection.total_player2 += 1;
+                }
+                commands.entity(entity).despawn_recursive();
+            }
+        }
+    }
+
+    let mut score = scoreboard_query.single_mut();
+    let total = water_collection.total_player1 + water_collection.total_player2;
+    score.sections[1].value = total.to_string();
+}
+
+fn cloud_movement(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
+    mut cloud_spawner_query: Query<&mut CloudSpawner>,
+    mut clouds: Query<(Entity, &mut Transform, &Cloud), With<Cloud>>,
+) {
+    for mut spawner in cloud_spawner_query.iter_mut() {
+        spawner.min_time.tick(time.delta());
+        spawner.max_time.tick(time.delta());
+        spawner.retry_time.tick(time.delta());
+
+        if spawner.min_time.just_finished() {
+            continue;
+        }
+
+        if spawner.min_time.finished() {
+            let make_spawn = if spawner.max_time.just_finished() {
+                true
+            } else {
+                if spawner.retry_time.just_finished() {
+                    rng.gen_range(spawner.probability.clone()) == 1
+                } else {
+                    false
+                }
+            };
+
+            if make_spawn {
+                spawner.min_time.reset();
+                spawner.max_time.reset();
+
+                commands.spawn((
+                    Game,
+                    Cloud {
+                        group: 0,
+                        velocity: Vec2::new(
+                            rng.gen_range(spawner.min_velocity.x..=spawner.max_velocity.x),
+                            rng.gen_range(spawner.min_velocity.y..=spawner.max_velocity.y),
+                        ),
+                    },
+                    RigidBody::KinematicPositionBased,
+                    spawner.collider.clone(),
+                    Platform {
+                        height_adjustment: 25.0,
+                    }, // sprite_center as(107/2) - half_y as(2.0)
+                    CollisionGroups::new(Group::GROUP_10, Group::ALL),
+                    SpriteBundle {
+                        texture: spawner.image.clone(),
+                        transform: Transform {
+                            translation: Vec3::new(
+                                680.0,
+                                rng.gen_range(spawner.min_height..spawner.max_height),
+                                0.0,
+                            ),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                ));
+            }
+        }
+    }
+
+    for (entity, mut transform, wind) in clouds.iter_mut() {
         if transform.translation.x < -680.0 {
-            transform.translation.x = 680.
+            commands.entity(entity).despawn_recursive();
+            continue;
         }
         transform.translation.x -= wind.velocity.x * time.delta_seconds();
     }
@@ -452,7 +798,9 @@ fn gust_system(
                         Game,
                         RigidBody::KinematicPositionBased,
                         Collider::cuboid(50.0, 2.0),
-                        Platform { height: 51.5 }, // sprite_center as(107/2) - half_y as(2.0)
+                        Platform {
+                            height_adjustment: 51.5,
+                        }, // sprite_center as(107/2) - half_y as(2.0)
                         CollisionGroups::new(Group::GROUP_10, Group::ALL),
                         TransformBundle::from_transform(Transform {
                             translation: Vec3::new(0., 40.0, -9.0),
@@ -525,6 +873,115 @@ fn translate_player_system(
             trajectory_velocity.x_per_second * time.delta_seconds(),
             trajectory_velocity.y_per_second * time.delta_seconds(),
         ))
+    }
+}
+
+fn debug_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut dev: ResMut<DevPhase>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut active_player_query: Query<
+        Entity,
+        (With<ActivePlayer>, With<KinematicCharacterController>),
+    >,
+    mut active_player_debug: Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut TextureAtlas,
+            &mut Sprite,
+            &mut PlayerMovement,
+        ),
+        (With<ActivePlayer>, Without<KinematicCharacterController>),
+    >,
+    mut player_query: Query<(Entity, &Player), With<Player>>,
+) {
+    // *ptime = time::PhysicsTime::default();
+    let d_key_just_pressed = keyboard_input.just_pressed(KeyCode::KeyD);
+
+    if *dev == DevPhase::Play {
+        if d_key_just_pressed {
+            *dev = DevPhase::Debug;
+        } else {
+            return;
+        }
+    } else {
+        if d_key_just_pressed {
+            player_query.iter().for_each(|(entity, player)| {
+                let group = if player.0 == 1 {
+                    Group::GROUP_11
+                } else {
+                    Group::GROUP_12
+                };
+                commands
+                    .entity(entity)
+                    .insert(KinematicCharacterController {
+                        filter_groups: Some(CollisionGroups::new(Group::ALL, group)),
+                        ..default()
+                    });
+            });
+            *dev = DevPhase::Play;
+            return;
+        }
+    }
+
+    match active_player_query.get_single() {
+        Ok(e) => {
+            commands.entity(e).remove::<KinematicCharacterController>();
+            return;
+        }
+        Err(_) => {}
+    }
+
+    let (
+        mut active_player_entity,
+        mut transform,
+        _texture_atlas,
+        mut sprite_image,
+        _player_movement,
+    ) = active_player_debug.single_mut();
+
+    let left_key_pressed = keyboard_input.pressed(KeyCode::ArrowLeft);
+    let right_key_pressed = keyboard_input.pressed(KeyCode::ArrowRight);
+    let up_key_pressed = keyboard_input.pressed(KeyCode::ArrowUp);
+    let down_key_pressed = keyboard_input.pressed(KeyCode::ArrowDown);
+
+    if left_key_pressed {
+        let x = transform.translation.x - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        if x > -600. + 20. {
+            transform.translation.x -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        }
+        sprite_image.flip_x = false;
+    } else if right_key_pressed {
+        let x = transform.translation.x + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        if x < 600. - 20. {
+            transform.translation.x += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        }
+        sprite_image.flip_x = true;
+    }
+    if up_key_pressed {
+        let y = transform.translation.y + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        // if y < 11200. {
+        if y < 1300. {
+            transform.translation.y += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        }
+    } else if down_key_pressed {
+        let y = transform.translation.y - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        if y > -725. {
+            transform.translation.y -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        }
+    }
+
+    let switch_key_just_pressed = keyboard_input.just_pressed(KeyCode::ShiftLeft);
+    if switch_key_just_pressed {
+        player_query.iter_mut().for_each(|(e, _)| {
+            if e == active_player_entity {
+                commands.entity(e).remove::<ActivePlayer>();
+            } else {
+                commands.entity(e).insert(ActivePlayer);
+            }
+        });
     }
 }
 
@@ -609,7 +1066,10 @@ fn keyboard_input_system(
         mut texture_atlas,
         mut sprite_image,
         mut player_movement,
-    ) = active_player_query.single_mut();
+    ) = match active_player_query.get_single_mut() {
+        Ok(e) => e,
+        Err(_) => return,
+    };
 
     let mut total_x = 0.;
     let mut total_y = 0.;
@@ -665,35 +1125,12 @@ fn keyboard_input_system(
     }
 
     if left_key_pressed {
-        // let x = transform.translation.x - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        // if x > -600. + 20. {
-        //     transform.translation.x -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        // }
         total_x = -PLAYER_MOVEMENT_SPEED; //* time.delta_seconds();
         sprite_image.flip_x = false;
     } else if right_key_pressed {
-        // let x = transform.translation.x + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        // if x < 600. - 20. {
-        //     transform.translation.x += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-        // }
         total_x = PLAYER_MOVEMENT_SPEED; //* time.delta_seconds();
         sprite_image.flip_x = true;
     }
-
-    // if up_key_pressed {
-    //     // let y = transform.translation.y + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-    //     // // if y < 11200. {
-    //     // if y < 1300. {
-    //     //     transform.translation.y += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-    //     // }
-    //     total_y = PLAYER_MOVEMENT_SPEED; // * time.delta_seconds();
-    // } else if down_key_pressed {
-    //     // let y = transform.translation.y - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-    //     // if y > -725. {
-    //     //     transform.translation.y -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-    //     // }
-    //     total_y = -PLAYER_MOVEMENT_SPEED; // * time.delta_seconds();
-    // }
 
     if switch_key_just_pressed {
         player_query.iter_mut().for_each(|e| {
@@ -859,6 +1296,8 @@ impl Plugin for PlatformPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(AppState::Game), (setup))
             .init_resource::<GamePhase>()
+            .init_resource::<DevPhase>()
+            .insert_resource(WaterCollection::default())
             .insert_resource(GustTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
             .add_systems(PreUpdate, camera_tracking::camera_tracking_system)
             .add_systems(
@@ -871,6 +1310,8 @@ impl Plugin for PlatformPlugin {
                     platform_sensor_system,
                     gust_system,
                     dialog_system,
+                    collectable_system,
+                    debug_system,
                 )
                     .run_if(in_state(AppState::Game)),
             );
