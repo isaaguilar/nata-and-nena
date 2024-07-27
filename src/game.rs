@@ -4,6 +4,7 @@ use crate::AppState;
 use crate::{
     CHARACTER_DOWNWARD_VELOCITY_PER_FRAME, MAXIMUM_DOWNWARD_VELOCITY, PLAYER_MOVEMENT_SPEED,
 };
+use bevy::text::TextLayoutInfo;
 use bevy::{prelude::*, render::texture::ImageLoader};
 use bevy_prng::ChaCha8Rng;
 use bevy_rand::resource::GlobalEntropy;
@@ -11,18 +12,15 @@ use bevy_rapier2d::prelude::*;
 use rand::prelude::Rng;
 use std::collections::HashMap;
 use std::ops::Range;
+use std::time::Duration;
 
 const PLAYER_SPRITE_SIZE_Y: f32 = 50.;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
 enum GamePhase {
     #[default]
-    Open,
-    Dialog,
-    Init,
-    Begining,
-    Middle,
-    End,
+    Play,
+    Reset,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
@@ -104,6 +102,18 @@ pub struct Cloud {
 #[derive(Component)]
 pub struct DialogBox;
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Resource)]
+pub struct DialogSpeaker(Option<Entity>);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Deref, DerefMut, Resource)]
+pub struct DialogSpeakerOpenDialog(bool);
+
+#[derive(Clone, Debug, Default, Resource)]
+pub struct DialogDecisionSelection(usize);
+
+#[derive(Component)]
+pub struct Selectable;
+
 #[derive(Component)]
 pub struct TextIndicatorParentSelector;
 
@@ -114,6 +124,8 @@ pub struct TextIndicator;
 pub struct Dialog {
     pub image: Handle<Image>,
     pub dialog: Text,
+    pub title: String,
+    pub subtitle: String,
 }
 
 #[derive(Component)]
@@ -134,6 +146,9 @@ pub struct Platform {
 
 #[derive(Component)]
 pub struct Scoreboard;
+
+#[derive(Component)]
+pub struct BigWaterDrop;
 
 #[derive(Component)]
 pub struct MovingPlatform {
@@ -202,7 +217,7 @@ pub fn setup(
             SpriteBundle {
                 texture: texture_handle.clone(),
                 transform: Transform {
-                    translation: Vec3::new(210.0, -400.0, 10.0),
+                    translation: Vec3::new(210.0, 00.0, 11.0),
                     ..default()
                 },
                 sprite: Sprite {
@@ -212,7 +227,10 @@ pub fn setup(
                 ..default()
             },
         ))
-        .insert(ActiveEvents::COLLISION_EVENTS);
+        .insert(CollisionGroups::new(
+            Group::from(Group::GROUP_1),
+            Group::from(Group::GROUP_1),
+        ));
 
     let texture_handle = asset_server.load("person2.png");
     let layout = TextureAtlasLayout::from_grid(
@@ -247,7 +265,7 @@ pub fn setup(
             SpriteBundle {
                 texture: texture_handle.clone(),
                 transform: Transform {
-                    translation: Vec3::new(-100.0, -300.0, 10.0),
+                    translation: Vec3::new(-100.0, 0.0, 11.0),
                     ..default()
                 },
                 sprite: Sprite {
@@ -257,7 +275,10 @@ pub fn setup(
                 ..default()
             },
         ))
-        .insert(ActiveEvents::COLLISION_EVENTS);
+        .insert(CollisionGroups::new(
+            Group::from(Group::GROUP_1),
+            Group::from(Group::GROUP_1),
+        ));
 
     commands.spawn(CloudSpawner {
         image: asset_server.load("raincloud.png"),
@@ -436,6 +457,7 @@ pub fn setup(
             ..default()
         },
     ));
+
     let texture_handle = asset_server.load("mediumcloudplatform.png");
     commands.spawn((
         Game,
@@ -449,6 +471,30 @@ pub fn setup(
             texture: texture_handle.clone(),
             transform: Transform {
                 translation: Vec3::new(-375., 1050.0, -1.0),
+                ..default()
+            },
+            sprite: Sprite {
+                flip_y: false,
+                flip_x: false,
+                ..default()
+            },
+            ..default()
+        },
+    ));
+
+    let texture_handle = asset_server.load("topcloud.png");
+    commands.spawn((
+        Game,
+        RigidBody::Fixed,
+        Collider::cuboid(215.5, 30.),
+        Platform {
+            height_adjustment: 28.0,
+        }, // sprite_center as(107/2) - half_y as(2.0)
+        CollisionGroups::new(Group::GROUP_10, Group::ALL),
+        SpriteBundle {
+            texture: texture_handle.clone(),
+            transform: Transform {
+                translation: Vec3::new(0., 1150.0, -1.0),
                 ..default()
             },
             sprite: Sprite {
@@ -490,10 +536,10 @@ pub fn setup(
         Scoreboard,
         TextBundle::from_sections([
             TextSection {
-                value: String::from("Water: "),
+                value: String::from("Nata's Water: "),
                 style: TextStyle {
                     font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
-                    font_size: 12.5,
+                    font_size: 16.0,
                     ..default()
                 },
             },
@@ -501,7 +547,23 @@ pub fn setup(
                 value: String::from("0"),
                 style: TextStyle {
                     font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
-                    font_size: 12.5,
+                    font_size: 16.0,
+                    ..default()
+                },
+            },
+            TextSection {
+                value: String::from("\n\nNena's Water: "),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 16.0,
+                    ..default()
+                },
+            },
+            TextSection {
+                value: String::from("\n\n0"),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 16.0,
                     ..default()
                 },
             },
@@ -515,19 +577,70 @@ pub fn setup(
         }),
     ));
 
-    let texture_handle = asset_server.load("chalchiuhtlicue-bust.png");
-
+    let texture_handle = asset_server.load("tlaloc.png");
     commands.spawn((
         Game,
         Dialog {
             image: texture_handle.clone(),
             dialog: Text {
-                sections: vec![TextSection {
-                    value: String::from("Hello, Frankie.\nHere is a random number:"),
-                    style: text_style.clone(),
-                }],
+                sections: vec![
+                    TextSection {
+                        value: String::from("Collect the water droplets and bring them to me!\n\nI shall reward you based on time and droplet amount."),
+                        style: text_style.clone(),
+                    },
+                    TextSection {
+                        value: String::from("You've collected water. Do you want to give it to me and receive your reward?\n\n▶ No   Yes"),
+                        style: text_style.clone(),
+                    },
+                    TextSection {
+                        value: String::from("You've collected water. Do you want to give it to me and receive your reward?\n\n  No ▶ Yes"),
+                        style: text_style.clone(),
+                    }
+                ],
                 ..default()
             },
+            title: String::from("Tlaloc"),
+            subtitle: String::from("The god of rain")
+        },
+        SpriteBundle {
+            texture: texture_handle.clone(),
+            transform: Transform {
+                translation: Vec3::new(0., 1250.0, -2.0),
+                ..default()
+            },
+            sprite: Sprite {
+                flip_y: false,
+                flip_x: false,
+                ..default()
+            },
+            ..default()
+        },
+    ));
+
+    let texture_handle = asset_server.load("chalchiuhtlicue-bust.png");
+    commands.spawn((
+        Game,
+        Dialog {
+            image: texture_handle.clone(),
+            dialog: Text {
+                sections: vec![
+                    TextSection {
+                        value: String::from("Collect the water droplets and take them to Tlaloc (the rain god) at the top of the sky!\n\nRemember, the more water you collect, the heavier you get."),
+                        style: text_style.clone(),
+                    },
+                    TextSection {
+                        value: String::from("You've collected water. Do you want to give it to me to become as light as a wisp?\n\n▶ No   Yes"),
+                        style: text_style.clone(),
+                    },
+                    TextSection {
+                        value: String::from("You've collected water. Do you want to give it to me to become as light as a wisp?\n\n  No ▶ Yes"),
+                        style: text_style.clone(),
+                    }
+                ],
+                ..default()
+            },
+            title: String::from("Chalchiuhtlicue"),
+            subtitle: String::from("The river goddess")
         },
         SpriteBundle {
             texture: texture_handle.clone(),
@@ -610,7 +723,7 @@ fn collectable_system(
                         WaterCollectable(Timer::from_seconds(30.0, TimerMode::Once)),
                         Sensor,
                         Collider::cuboid(10., 10.0),
-                        CollisionGroups::new(Group::GROUP_12 | Group::GROUP_13, Group::ALL),
+                        // CollisionGroups::new(Group::GROUP_12 | Group::GROUP_13, Group::ALL),
                         TextureAtlas {
                             layout: texture_atlas_layouts.add(TextureAtlasLayout::from_grid(
                                 UVec2::new(20, 20),
@@ -645,7 +758,10 @@ fn collectable_system(
             continue;
         }
         for (player_entity, player) in player_query.iter() {
-            if rapier_context.intersection_pair(entity, player_entity) == Some(true) {
+            if rapier_context
+                .intersection_pair(entity, player_entity)
+                .is_some()
+            {
                 if player.0 == 1 {
                     water_collection.total_player1 += 1;
                 } else {
@@ -658,7 +774,8 @@ fn collectable_system(
 
     let mut score = scoreboard_query.single_mut();
     let total = water_collection.total_player1 + water_collection.total_player2;
-    score.sections[1].value = total.to_string();
+    score.sections[1].value = water_collection.total_player2.to_string();
+    score.sections[3].value = water_collection.total_player1.to_string();
 }
 
 fn cloud_movement(
@@ -840,8 +957,30 @@ fn gust_system(
     }
 }
 
-fn player_gravity_system(time: Res<Time>, mut player_query: Query<&mut PlayerMovement>) {
-    for mut player_movement in player_query.iter_mut() {
+fn player_gravity_system(
+    time: Res<Time>,
+    mut water_collection: Res<WaterCollection>,
+    mut player_query: Query<(&mut PlayerMovement, &Player)>,
+) {
+    for (mut player_movement, player) in player_query.iter_mut() {
+        let water_collected = if player.0 == 1 {
+            water_collection.total_player1
+        } else {
+            water_collection.total_player2
+        };
+        let mut gravity_multiplier = if water_collected > 15 {
+            0.4 - 0.015 * (water_collected - 14) as f32
+        } else if water_collected > 8 {
+            0.8 - 0.05 * (water_collected - 7) as f32
+        } else {
+            1.4 - 0.1 * water_collected as f32
+        };
+        if gravity_multiplier < 0.3 {
+            gravity_multiplier = 0.2
+        }
+        player_movement
+            .timer
+            .set_duration(Duration::from_secs_f32(gravity_multiplier));
         if player_movement.falling {
             if player_movement.airborne && !player_movement.timer.finished() {
                 player_movement.timer.tick(2 * time.delta());
@@ -948,28 +1087,28 @@ fn debug_system(
     let down_key_pressed = keyboard_input.pressed(KeyCode::ArrowDown);
 
     if left_key_pressed {
-        let x = transform.translation.x - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        let x = transform.translation.x - 2.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         if x > -600. + 20. {
-            transform.translation.x -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+            transform.translation.x -= 2.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         }
         sprite_image.flip_x = false;
     } else if right_key_pressed {
-        let x = transform.translation.x + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        let x = transform.translation.x + 2.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         if x < 600. - 20. {
-            transform.translation.x += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+            transform.translation.x += 2.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         }
         sprite_image.flip_x = true;
     }
     if up_key_pressed {
-        let y = transform.translation.y + PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        let y = transform.translation.y + 2.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         // if y < 11200. {
         if y < 1300. {
-            transform.translation.y += PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+            transform.translation.y += 2.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         }
     } else if down_key_pressed {
-        let y = transform.translation.y - PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+        let y = transform.translation.y - 2.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         if y > -725. {
-            transform.translation.y -= PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+            transform.translation.y -= 2.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
         }
     }
 
@@ -987,8 +1126,9 @@ fn debug_system(
 
 fn keyboard_input_system(
     mut commands: Commands,
-    mut game_phase: ResMut<GamePhase>,
     time: Res<Time>,
+    dialog_speaker: Res<DialogSpeaker>,
+    dialog_speaker_open_dialog: Res<DialogSpeakerOpenDialog>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     gamepads: Res<Gamepads>,
     button_inputs: Res<ButtonInput<GamepadButton>>,
@@ -1004,8 +1144,11 @@ fn keyboard_input_system(
         With<ActivePlayer>,
     >,
     active_player_kinematic_output_query: Query<(Entity, &KinematicCharacterControllerOutput)>,
-    mut player_query: Query<Entity, With<Player>>,
+    mut player_query: Query<(Entity, &mut Transform), With<Player>>,
 ) {
+    if dialog_speaker_open_dialog.0 {
+        return;
+    }
     let gamepad = match gamepads.iter().next() {
         Some(gp) => gp,
         None => Gamepad::new(0),
@@ -1083,15 +1226,19 @@ fn keyboard_input_system(
     };
 
     if jump_key_just_pressed {
-        // Checks for dialog
-        *game_phase = GamePhase::Dialog;
-        if grounded && player_movement.is_jump_reset {
-            // player can now jump
-            player_movement.timer.reset();
-            player_movement.airborne = true;
-            player_movement.falling = false;
-            player_movement.is_jump_reset = false;
-            total_y = 600.0;
+        // Checks for dialog and disable jumping when in range of speaker
+        match dialog_speaker.0 {
+            Some(_) => {}
+            None => {
+                if grounded && player_movement.is_jump_reset {
+                    // player can now jump
+                    player_movement.timer.reset();
+                    player_movement.airborne = true;
+                    player_movement.falling = false;
+                    player_movement.is_jump_reset = false;
+                    total_y = 600.0;
+                }
+            }
         }
     } else if jump_key_pressed {
         if player_movement.airborne && player_movement.timer.finished() {
@@ -1133,11 +1280,13 @@ fn keyboard_input_system(
     }
 
     if switch_key_just_pressed {
-        player_query.iter_mut().for_each(|e| {
+        player_query.iter_mut().for_each(|(e, mut t)| {
             if e == active_player_entity {
                 commands.entity(e).remove::<ActivePlayer>();
+                t.translation.z = 10.0;
             } else {
                 commands.entity(e).insert(ActivePlayer);
+                t.translation.z = 11.0;
             }
         });
         total_x = 0.;
@@ -1150,26 +1299,21 @@ fn keyboard_input_system(
     player_movement.x_per_second = total_x;
 }
 
-fn dialog_system(
+fn dialog_selection_system(
+    mut time: ResMut<Time>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut game_phase: ResMut<GamePhase>,
-    mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
-    open_dialog: Query<Entity, With<DialogBox>>,
-    mut dialog_query: Query<(Entity, &Dialog, &Transform)>,
-    mut selected_text_query: Query<Entity, With<TextIndicatorParentSelector>>,
+
+    mut dialog_speaker: ResMut<DialogSpeaker>,
+    mut dialog_speaker_open_dialog: ResMut<DialogSpeakerOpenDialog>,
+    dialog_query: Query<(Entity, &Dialog, &Transform)>,
     mut text_indicator_query: Query<Entity, With<TextIndicator>>,
+    selected_text_query: Query<Entity, With<TextIndicatorParentSelector>>,
     mut active_player_query: Query<
         ((&Transform, &mut PlayerMovement)),
         (With<Player>, With<ActivePlayer>),
     >,
 ) {
-    if *game_phase != GamePhase::Dialog {
-        for entity in &open_dialog {
-            commands.entity(entity).despawn_recursive();
-        }
-    }
-
     let (player_position, mut player_movement) = active_player_query.single_mut();
     let mut dialogs = dialog_query
         .iter()
@@ -1200,7 +1344,8 @@ fn dialog_system(
             for entity in text_indicator_query.iter_mut() {
                 commands.entity(entity).despawn();
             }
-            *game_phase = GamePhase::Open;
+
+            *dialog_speaker = DialogSpeaker(None);
             return;
         }
     };
@@ -1230,9 +1375,147 @@ fn dialog_system(
             }
         }
     }
+    *dialog_speaker = DialogSpeaker(Some(entity));
+}
 
-    if *game_phase == GamePhase::Dialog {
-        if open_dialog.is_empty() {
+fn resetting(
+    mut commands: Commands,
+    mut time: ResMut<Time>,
+    asset_server: Res<AssetServer>,
+    mut game_phase: ResMut<GamePhase>,
+    mut kinematic_player_query: Query<(Entity, &KinematicCharacterController), With<Player>>,
+    mut player_query: Query<(Entity, &mut Transform, &Player), With<Player>>,
+    mut drops: Query<Entity, With<BigWaterDrop>>,
+) {
+    if *game_phase == GamePhase::Reset {
+        for (entity, transform) in kinematic_player_query.iter_mut() {
+            let mut c = commands.entity(entity);
+            c.with_children(|child| {
+                let texture_handle = asset_server.load("transparentdrop.png");
+                child.spawn((
+                    Game,
+                    SpriteBundle {
+                        texture: texture_handle.clone(),
+                        transform: Transform {
+                            translation: Vec3::new(0., 5.0, 15.0),
+                            ..default()
+                        },
+                        ..default()
+                    },
+                ));
+            });
+
+            c.remove::<KinematicCharacterController>();
+        }
+
+        let mut done = false;
+        for (entity, mut transform, player) in player_query.iter_mut() {
+            transform.translation.y -= 3.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+            if !done {
+                done = transform.translation.y < -400.0;
+            }
+            if done {
+                let group = if player.0 == 1 {
+                    Group::GROUP_11
+                } else {
+                    Group::GROUP_12
+                };
+
+                let mut c = commands.entity(entity);
+                c.insert(KinematicCharacterController {
+                    filter_groups: Some(CollisionGroups::new(Group::ALL, group)),
+                    ..default()
+                });
+
+                c.despawn_descendants();
+            }
+        }
+        if done {
+            if drops.is_empty() {
+                *game_phase = GamePhase::Play;
+            }
+        } else {
+            time.advance_by(Duration::ZERO)
+        }
+    }
+}
+
+fn active_dialog_system(
+    mut time: ResMut<Time>,
+    mut commands: Commands,
+    mut yes_or_no: ResMut<DialogDecisionSelection>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    gamepads: Res<Gamepads>,
+    axes: Res<Axis<GamepadAxis>>,
+    mut water_collection: ResMut<WaterCollection>,
+    mut game_phase: ResMut<GamePhase>,
+    button_inputs: Res<ButtonInput<GamepadButton>>,
+    dialog_speaker: ResMut<DialogSpeaker>,
+    mut dialog_speaker_open_dialog: ResMut<DialogSpeakerOpenDialog>,
+    open_dialog: Query<Entity, With<DialogBox>>,
+    mut dialog_query: Query<(Entity, &Dialog, &Transform)>,
+) {
+    if !dialog_speaker_open_dialog.0 {
+        for entity in &open_dialog {
+            commands.entity(entity).despawn_recursive();
+        }
+    }
+
+    let entity = match dialog_speaker.0 {
+        Some(e) => e,
+        None => {
+            dialog_speaker_open_dialog.0 = false;
+            return;
+        }
+    };
+
+    let (_, dialog, transform) = match dialog_query.iter_mut().find(|(e, _, _)| *e == entity) {
+        Some(d) => d,
+        None => return,
+    };
+
+    let gamepad = match gamepads.iter().next() {
+        Some(gp) => gp,
+        None => Gamepad::new(0),
+    };
+    let left_stick_x = match axes.get(GamepadAxis::new(gamepad, GamepadAxisType::LeftStickX)) {
+        Some(x) => x,
+        None => 0.0,
+    };
+
+    let jump_key_just_pressed = button_inputs
+        .just_pressed(GamepadButton::new(gamepad, GamepadButtonType::South))
+        || keyboard_input.just_pressed(KeyCode::Space);
+
+    let left_key_pressed = left_stick_x < -0.10 || keyboard_input.pressed(KeyCode::ArrowLeft);
+    let right_key_pressed = left_stick_x > 0.10 || keyboard_input.pressed(KeyCode::ArrowRight);
+
+    let index = if water_collection.total_player1 + water_collection.total_player2 <= 0 {
+        0
+    } else if !dialog_speaker_open_dialog.0 {
+        1
+    } else {
+        if left_key_pressed {
+            yes_or_no.0 = 0
+        }
+
+        if right_key_pressed {
+            yes_or_no.0 = 1
+        }
+
+        if yes_or_no.0 == 0 {
+            1
+        } else {
+            2
+        }
+    };
+
+    if index > 0 && !open_dialog.is_empty() {
+        time.advance_by(Duration::ZERO);
+        if right_key_pressed || left_key_pressed {
+            for entity in &open_dialog {
+                commands.entity(entity).despawn_recursive();
+            }
             commands
                 .spawn((
                     Game,
@@ -1269,25 +1552,95 @@ fn dialog_system(
                     });
                     child.spawn(
                         TextBundle::from_section(
-                            format!(
-                                "{}{}",
-                                dialog.dialog.sections[0].value.clone(),
-                                rng.gen_range(0..=100)
-                            ),
+                            format!("{}{}", dialog.dialog.sections[index].value.clone(), ""),
                             dialog.dialog.sections[0].style.clone(),
                         )
                         .with_text_justify(JustifyText::Left)
                         .with_style(Style {
                             position_type: PositionType::Absolute,
                             align_items: AlignItems::Center,
-                            top: Val::Percent(5.5),
+                            top: Val::Percent(20.5),
                             left: Val::Px(120.0),
+                            right: Val::Px(50.0),
                             ..default()
                         }),
                     );
                 });
+
+            return;
         }
-        // *game_phase = GamePhase::Begining;
+        if jump_key_just_pressed {
+            if yes_or_no.0 == 1 {
+                if dialog.title == "Tlaloc" {
+                    let total = water_collection.total_player1 + water_collection.total_player2;
+                    info!(total);
+                    *game_phase = GamePhase::Reset;
+                }
+                water_collection.total_player1 = 0;
+                water_collection.total_player2 = 0;
+            }
+            dialog_speaker_open_dialog.0 = false;
+            return;
+        }
+    } else if !open_dialog.is_empty() {
+        if jump_key_just_pressed {
+            dialog_speaker_open_dialog.0 = false;
+            return;
+        }
+        time.advance_by(Duration::ZERO);
+    } else if jump_key_just_pressed || dialog_speaker_open_dialog.0 {
+        dialog_speaker_open_dialog.0 = true;
+
+        commands
+            .spawn((
+                Game,
+                DialogBox,
+                NodeBundle {
+                    background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
+                    style: Style {
+                        width: Val::Percent(97.0),
+                        height: Val::Percent(15.0),
+                        position_type: PositionType::Absolute,
+                        align_items: AlignItems::Center,
+                        bottom: Val::Percent(2.5),
+                        left: Val::Percent(1.5),
+                        ..default()
+                    },
+
+                    ..default()
+                },
+            ))
+            .with_children(|child| {
+                child.spawn(ImageBundle {
+                    image: UiImage {
+                        texture: dialog.image.clone(),
+                        ..default()
+                    },
+                    style: Style {
+                        position_type: PositionType::Absolute,
+                        align_items: AlignItems::Center,
+                        top: Val::Percent(10.0),
+                        left: Val::Percent(1.0),
+                        ..default()
+                    },
+                    ..default()
+                });
+                child.spawn(
+                    TextBundle::from_section(
+                        format!("{}{}", dialog.dialog.sections[index].value.clone(), ""),
+                        dialog.dialog.sections[0].style.clone(),
+                    )
+                    .with_text_justify(JustifyText::Left)
+                    .with_style(Style {
+                        position_type: PositionType::Absolute,
+                        align_items: AlignItems::Center,
+                        top: Val::Percent(20.5),
+                        left: Val::Px(120.0),
+                        right: Val::Px(50.0),
+                        ..default()
+                    }),
+                );
+            });
     }
 }
 
@@ -1297,22 +1650,31 @@ impl Plugin for PlatformPlugin {
         app.add_systems(OnEnter(AppState::Game), (setup))
             .init_resource::<GamePhase>()
             .init_resource::<DevPhase>()
-            .insert_resource(WaterCollection::default())
+            .insert_resource(WaterCollection {
+                total_player1: 0,
+                total_player2: 1,
+            })
             .insert_resource(GustTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
+            .insert_resource(DialogSpeaker::default())
+            .insert_resource(DialogSpeakerOpenDialog::default())
+            .insert_resource(DialogDecisionSelection::default())
             .add_systems(PreUpdate, camera_tracking::camera_tracking_system)
             .add_systems(
                 Update,
                 (
+                    dialog_selection_system,
+                    active_dialog_system,
                     keyboard_input_system,
+                    resetting,
                     player_gravity_system,
                     translate_player_system,
                     cloud_movement,
                     platform_sensor_system,
                     gust_system,
-                    dialog_system,
                     collectable_system,
                     debug_system,
                 )
+                    .chain()
                     .run_if(in_state(AppState::Game)),
             );
     }
