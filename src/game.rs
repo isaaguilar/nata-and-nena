@@ -52,7 +52,7 @@ pub struct WaterCollection {
 pub struct GustTimer(Timer);
 
 #[derive(Resource, Deref, DerefMut)]
-pub struct TotalScore(u32);
+pub struct TotalScore(pub u32);
 
 #[derive(Resource, Deref, DerefMut)]
 pub struct TotalTime(Timer);
@@ -176,6 +176,8 @@ pub fn setup(
     asset_server: Res<AssetServer>,
     mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
     mut total_time: ResMut<TotalTime>,
+    mut total_score: ResMut<TotalScore>,
+    mut water_collection: ResMut<WaterCollection>,
     total_seconds: Res<TotalSeconds>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     mut bg: ResMut<ClearColor>,
@@ -190,6 +192,9 @@ pub fn setup(
     total_time
         .0
         .set_duration(Duration::from_secs_f32(total_seconds.0));
+    total_time.0.reset();
+    total_score.0 = 0;
+    *water_collection = WaterCollection::default();
 
     commands.spawn((
         Game,
@@ -217,6 +222,7 @@ pub fn setup(
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
     commands
         .spawn((
+            Game,
             Player(1),
             PlayerMovement {
                 timer: Timer::from_seconds(0.4, TimerMode::Once),
@@ -232,7 +238,6 @@ pub fn setup(
                 )),
                 ..default()
             },
-            Game,
             TextureAtlas {
                 layout: texture_atlas_layout.clone(),
                 index: 0,
@@ -266,6 +271,7 @@ pub fn setup(
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
     commands
         .spawn((
+            Game,
             Player(2),
             PlayerMovement {
                 timer: Timer::from_seconds(0.4, TimerMode::Once),
@@ -280,7 +286,6 @@ pub fn setup(
                 )),
                 ..default()
             },
-            Game,
             TextureAtlas {
                 layout: texture_atlas_layout.clone(),
                 index: 0,
@@ -303,116 +308,135 @@ pub fn setup(
             Group::from(Group::GROUP_1),
         ));
 
-    commands.spawn(CloudSpawner {
-        image: asset_server.load("raincloud.png"),
-        group: 0,
-        min_velocity: Vec2::new(5.0, 0.),
-        max_velocity: Vec2::new(55.0, 0.),
-        min_height: -250.,
-        max_height: -160.,
-        min_time: Timer::from_seconds(2.5, TimerMode::Once),
-        max_time: Timer::from_seconds(10., TimerMode::Once),
-        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
-        probability: Range { start: 1, end: 200 },
-        collider: Collider::cuboid(56.5, 25.0),
-        ..default()
-    });
+    commands.spawn((
+        Game,
+        CloudSpawner {
+            image: asset_server.load("raincloud.png"),
+            group: 0,
+            min_velocity: Vec2::new(5.0, 0.),
+            max_velocity: Vec2::new(55.0, 0.),
+            min_height: -250.,
+            max_height: -160.,
+            min_time: Timer::from_seconds(2.5, TimerMode::Once),
+            max_time: Timer::from_seconds(10., TimerMode::Once),
+            retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+            probability: Range { start: 1, end: 200 },
+            collider: Collider::cuboid(56.5, 25.0),
+            ..default()
+        },
+    ));
 
-    commands.spawn(CloudSpawner {
-        image: asset_server.load("cloud1.png"),
+    commands.spawn((
+        Game,
+        CloudSpawner {
+            image: asset_server.load("cloud1.png"),
+            group: 1,
+            min_height: -150.,
+            max_height: 0.,
+            min_velocity: Vec2::new(10.0, 0.),
+            max_velocity: Vec2::new(75.0, 0.),
+            min_time: Timer::from_seconds(0.5, TimerMode::Once),
+            max_time: Timer::from_seconds(5., TimerMode::Once),
+            retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+            probability: Range { start: 1, end: 60 },
+            collider: Collider::cuboid(20., 10.0),
+            ..default()
+        },
+    ));
+    commands.spawn((
+        Game,
+        WaterCollectableSpawner {
+            image: asset_server.load("droplet.png"),
+            // atlas: TextureAtlas {
+            //     layout: texture_atlas_layouts.add(TextureAtlasLayout::from_grid(
+            //         UVec2::new(20, 20),
+            //         1,
+            //         1,
+            //         Some(UVec2::new(0, 0)),
+            //         Some(UVec2::new(0, 0)),
+            //     )),
+            //     index: rng.gen_range(0..1),
+            // },
+            // grid: GridOptions { rows: 1, cols: 1 },
+            min_height: -350.,
+            max_height: 200.,
+            min_time: Timer::from_seconds(5.0, TimerMode::Once),
+            max_time: Timer::from_seconds(60., TimerMode::Once),
+            retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+            probability: Range { start: 1, end: 20 },
+            // collider: Collider::cuboid(10., 10.0),
+        },
+    ));
 
-        group: 1,
-        min_height: -150.,
-        max_height: 0.,
-        min_velocity: Vec2::new(10.0, 0.),
-        max_velocity: Vec2::new(75.0, 0.),
-        min_time: Timer::from_seconds(0.5, TimerMode::Once),
-        max_time: Timer::from_seconds(5., TimerMode::Once),
-        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
-        probability: Range { start: 1, end: 60 },
-        collider: Collider::cuboid(20., 10.0),
-        ..default()
-    });
-    commands.spawn(WaterCollectableSpawner {
-        image: asset_server.load("droplet.png"),
-        // atlas: TextureAtlas {
-        //     layout: texture_atlas_layouts.add(TextureAtlasLayout::from_grid(
-        //         UVec2::new(20, 20),
-        //         1,
-        //         1,
-        //         Some(UVec2::new(0, 0)),
-        //         Some(UVec2::new(0, 0)),
-        //     )),
-        //     index: rng.gen_range(0..1),
-        // },
-        // grid: GridOptions { rows: 1, cols: 1 },
-        min_height: -350.,
-        max_height: 200.,
+    commands.spawn((
+        Game,
+        CloudSpawner {
+            image: asset_server.load("raincloud.png"),
+            group: 1,
+            min_velocity: Vec2::new(55.0, 0.),
+            max_velocity: Vec2::new(59.0, 0.),
+            min_height: 300.,
+            max_height: 400.,
+            min_time: Timer::from_seconds(2.5, TimerMode::Once),
+            max_time: Timer::from_seconds(6., TimerMode::Once),
+            retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+            probability: Range { start: 1, end: 60 },
+            collider: Collider::cuboid(56.5, 25.0),
+            ..default()
+        },
+    ));
 
-        min_time: Timer::from_seconds(5.0, TimerMode::Once),
-        max_time: Timer::from_seconds(60., TimerMode::Once),
-        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
-        probability: Range { start: 1, end: 20 },
-        // collider: Collider::cuboid(10., 10.0),
-    });
-
-    commands.spawn(CloudSpawner {
-        image: asset_server.load("raincloud.png"),
-        group: 1,
-        min_velocity: Vec2::new(55.0, 0.),
-        max_velocity: Vec2::new(59.0, 0.),
-        min_height: 300.,
-        max_height: 400.,
-        min_time: Timer::from_seconds(2.5, TimerMode::Once),
-        max_time: Timer::from_seconds(6., TimerMode::Once),
-        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
-        probability: Range { start: 1, end: 60 },
-        collider: Collider::cuboid(56.5, 25.0),
-        ..default()
-    });
-
-    commands.spawn(CloudSpawner {
-        image: asset_server.load("cloud1.png"),
-        group: 1,
-        min_height: 600.,
-        max_height: 700.,
-        min_velocity: Vec2::new(75.0, 0.),
-        max_velocity: Vec2::new(79.0, 0.),
-        min_time: Timer::from_seconds(0.5, TimerMode::Once),
-        max_time: Timer::from_seconds(2.5, TimerMode::Once),
-        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
-        probability: Range { start: 1, end: 20 },
-        collider: Collider::cuboid(20., 10.0),
-        ..default()
-    });
-    commands.spawn(CloudSpawner {
-        image: asset_server.load("cloud1.png"),
-        group: 1,
-        min_height: 700.,
-        max_height: 800.,
-        min_velocity: Vec2::new(75.0, 0.),
-        max_velocity: Vec2::new(79.0, 0.),
-        min_time: Timer::from_seconds(0.5, TimerMode::Once),
-        max_time: Timer::from_seconds(3., TimerMode::Once),
-        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
-        probability: Range { start: 1, end: 35 },
-        collider: Collider::cuboid(20., 10.0),
-        ..default()
-    });
-    commands.spawn(CloudSpawner {
-        image: asset_server.load("cloud1.png"),
-        group: 1,
-        min_height: 800.,
-        max_height: 1000.,
-        min_velocity: Vec2::new(75.0, 0.),
-        max_velocity: Vec2::new(79.0, 0.),
-        min_time: Timer::from_seconds(0.5, TimerMode::Once),
-        max_time: Timer::from_seconds(4., TimerMode::Once),
-        retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
-        probability: Range { start: 1, end: 50 },
-        collider: Collider::cuboid(20., 10.0),
-        ..default()
-    });
+    commands.spawn((
+        Game,
+        CloudSpawner {
+            image: asset_server.load("cloud1.png"),
+            group: 1,
+            min_height: 600.,
+            max_height: 700.,
+            min_velocity: Vec2::new(75.0, 0.),
+            max_velocity: Vec2::new(79.0, 0.),
+            min_time: Timer::from_seconds(0.5, TimerMode::Once),
+            max_time: Timer::from_seconds(2.5, TimerMode::Once),
+            retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+            probability: Range { start: 1, end: 20 },
+            collider: Collider::cuboid(20., 10.0),
+            ..default()
+        },
+    ));
+    commands.spawn((
+        Game,
+        CloudSpawner {
+            image: asset_server.load("cloud1.png"),
+            group: 1,
+            min_height: 700.,
+            max_height: 800.,
+            min_velocity: Vec2::new(75.0, 0.),
+            max_velocity: Vec2::new(79.0, 0.),
+            min_time: Timer::from_seconds(0.5, TimerMode::Once),
+            max_time: Timer::from_seconds(3., TimerMode::Once),
+            retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+            probability: Range { start: 1, end: 35 },
+            collider: Collider::cuboid(20., 10.0),
+            ..default()
+        },
+    ));
+    commands.spawn((
+        Game,
+        CloudSpawner {
+            image: asset_server.load("cloud1.png"),
+            group: 1,
+            min_height: 800.,
+            max_height: 1000.,
+            min_velocity: Vec2::new(75.0, 0.),
+            max_velocity: Vec2::new(79.0, 0.),
+            min_time: Timer::from_seconds(0.5, TimerMode::Once),
+            max_time: Timer::from_seconds(4., TimerMode::Once),
+            retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
+            probability: Range { start: 1, end: 50 },
+            collider: Collider::cuboid(20., 10.0),
+            ..default()
+        },
+    ));
 
     let texture_handle = asset_server.load("cloudplatform.png");
     commands.spawn((
@@ -556,6 +580,7 @@ pub fn setup(
     ));
 
     commands.spawn((
+        Game,
         TimeDisplay,
         TextBundle::from_sections([
             TextSection {
@@ -585,6 +610,7 @@ pub fn setup(
     ));
 
     commands.spawn((
+        Game,
         WaterCollectionScoreboard,
         TextBundle::from_sections([
             TextSection {
@@ -723,6 +749,7 @@ pub fn setup(
 
 fn time_count_system(
     time: Res<Time>,
+    mut app_state: ResMut<NextState<AppState>>,
     dialog_speaker_open_dialog: Res<DialogSpeakerOpenDialog>,
     mut total_time: ResMut<TotalTime>,
     mut time_display_query: Query<&mut Text, With<TimeDisplay>>,
@@ -734,6 +761,9 @@ fn time_count_system(
     match time_display_query.get_single_mut() {
         Ok(mut d) => d.sections[1].value = total_time.0.elapsed_secs().to_string(),
         Err(_) => {}
+    }
+    if total_time.just_finished() {
+        app_state.set(AppState::GameOver);
     }
 }
 
@@ -1654,21 +1684,25 @@ fn active_dialog_system(
                     },
                 ))
                 .with_children(|child| {
-                    child.spawn(ImageBundle {
-                        image: UiImage {
-                            texture: dialog.image.clone(),
+                    child.spawn((
+                        Game,
+                        ImageBundle {
+                            image: UiImage {
+                                texture: dialog.image.clone(),
+                                ..default()
+                            },
+                            style: Style {
+                                position_type: PositionType::Absolute,
+                                align_items: AlignItems::Center,
+                                top: Val::Percent(10.0),
+                                left: Val::Percent(1.0),
+                                ..default()
+                            },
                             ..default()
                         },
-                        style: Style {
-                            position_type: PositionType::Absolute,
-                            align_items: AlignItems::Center,
-                            top: Val::Percent(10.0),
-                            left: Val::Percent(1.0),
-                            ..default()
-                        },
-                        ..default()
-                    });
-                    child.spawn(
+                    ));
+                    child.spawn((
+                        Game,
                         TextBundle::from_section(
                             format!(
                                 "{} {}",
@@ -1686,7 +1720,7 @@ fn active_dialog_system(
                             right: Val::Px(50.0),
                             ..default()
                         }),
-                    );
+                    ));
                 });
 
             return;
@@ -1744,21 +1778,25 @@ fn active_dialog_system(
                 },
             ))
             .with_children(|child| {
-                child.spawn(ImageBundle {
-                    image: UiImage {
-                        texture: dialog.image.clone(),
+                child.spawn((
+                    Game,
+                    ImageBundle {
+                        image: UiImage {
+                            texture: dialog.image.clone(),
+                            ..default()
+                        },
+                        style: Style {
+                            position_type: PositionType::Absolute,
+                            align_items: AlignItems::Center,
+                            top: Val::Percent(10.0),
+                            left: Val::Percent(1.0),
+                            ..default()
+                        },
                         ..default()
                     },
-                    style: Style {
-                        position_type: PositionType::Absolute,
-                        align_items: AlignItems::Center,
-                        top: Val::Percent(10.0),
-                        left: Val::Percent(1.0),
-                        ..default()
-                    },
-                    ..default()
-                });
-                child.spawn(
+                ));
+                child.spawn((
+                    Game,
                     TextBundle::from_section(
                         format!(
                             "{} {}",
@@ -1776,7 +1814,7 @@ fn active_dialog_system(
                         right: Val::Px(50.0),
                         ..default()
                     }),
-                );
+                ));
             });
     }
 }
@@ -1787,10 +1825,7 @@ impl Plugin for PlatformPlugin {
         app.add_systems(OnEnter(AppState::Game), (setup))
             .init_resource::<GamePhase>()
             .init_resource::<DevPhase>()
-            .insert_resource(WaterCollection {
-                total_player1: 15,
-                total_player2: 1,
-            })
+            .insert_resource(WaterCollection::default())
             .insert_resource(GustTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
             .insert_resource(DialogSpeaker::default())
             .insert_resource(DialogSpeakerOpenDialog::default())
@@ -1816,6 +1851,7 @@ impl Plugin for PlatformPlugin {
                 )
                     .chain()
                     .run_if(in_state(AppState::Game)),
-            );
+            )
+            .add_systems(OnExit(AppState::Game), despawn_screen::<Game>);
     }
 }

@@ -108,8 +108,8 @@ fn menu_setup(mut commands: Commands, asset_server: Res<AssetServer>, mut bg: Re
 fn menu_selection_system(
     time: Res<Time>,
     mut app_state: ResMut<NextState<AppState>>,
-    keyboard_input: Res<ButtonInput<KeyCode>>,
     mut total_seconds: ResMut<TotalSeconds>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     gamepads: Res<Gamepads>,
     button_inputs: Res<ButtonInput<GamepadButton>>,
     axes: Res<Axis<GamepadAxis>>,
