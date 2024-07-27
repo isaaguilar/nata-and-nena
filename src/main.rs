@@ -1,3 +1,4 @@
+use bevy::audio::PlaybackMode;
 use bevy::prelude::*;
 use bevy_prng::ChaCha8Rng;
 use bevy_rand::prelude::EntropyPlugin;
@@ -45,6 +46,17 @@ fn despawn_screen<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands
     }
 }
 
+fn music(asset_server: Res<AssetServer>, mut commands: Commands) {
+    commands.spawn(AudioBundle {
+        source: asset_server.load("water.mp3"),
+        settings: PlaybackSettings {
+            mode: PlaybackMode::Loop,
+            ..default()
+        },
+        ..default()
+    });
+}
+
 fn main() {
     App::new()
         .add_plugins((setup::WindowSetup, camera::CameraPlugin))
@@ -53,6 +65,7 @@ fn main() {
         .add_plugins(EntropyPlugin::<ChaCha8Rng>::default())
         // .add_plugins(RapierDebugRenderPlugin::default())
         .init_state::<AppState>()
+        .add_systems(Startup, music)
         .add_plugins((
             splash::SplashPlugin,
             menu::MenuPlugin,

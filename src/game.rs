@@ -5,11 +5,13 @@ use crate::AppState;
 use crate::{
     CHARACTER_DOWNWARD_VELOCITY_PER_FRAME, MAXIMUM_DOWNWARD_VELOCITY, PLAYER_MOVEMENT_SPEED,
 };
+use bevy::audio::PlaybackMode;
 use bevy::text::TextLayoutInfo;
 use bevy::time::Stopwatch;
 use bevy::{prelude::*, render::texture::ImageLoader};
 use bevy_prng::ChaCha8Rng;
 use bevy_rand::resource::GlobalEntropy;
+use bevy_rapier2d::na::distance;
 use bevy_rapier2d::prelude::*;
 use rand::prelude::Rng;
 use std::collections::HashMap;
@@ -679,15 +681,15 @@ pub fn setup(
             dialog: Text {
                 sections: vec![
                     TextSection {
-                        value: String::from("Collect the water droplets and bring them to me!\n\nI shall reward you based on time and droplet amount."),
+                        value: String::from("Offer me water droplets to collect points."),
                         style: text_style.clone(),
                     },
                     TextSection {
-                        value: String::from("You've collected water. Do you want to give it to me and receive your reward?\n\n▶ No   Yes"),
+                        value: String::from("Your offering pleases me. Will you surrender your tribute now to receive points?\n\n▶ No   Yes"),
                         style: text_style.clone(),
                     },
                     TextSection {
-                        value: String::from("You've collected water. Do you want to give it to me and receive your reward?\n\n  No ▶ Yes"),
+                        value: String::from("Your offering pleases me. Will you surrender your tribute now to receive points?\n\n  No ▶ Yes"),
                         style: text_style.clone(),
                     }
                 ],
@@ -759,7 +761,7 @@ fn time_count_system(
     }
     total_time.0.tick(time.delta());
     match time_display_query.get_single_mut() {
-        Ok(mut d) => d.sections[1].value = total_time.0.elapsed_secs().to_string(),
+        Ok(mut d) => d.sections[1].value = total_time.0.remaining_secs().ceil().to_string(),
         Err(_) => {}
     }
     if total_time.just_finished() {
@@ -798,6 +800,7 @@ pub fn platform_sensor_system(
 fn collectable_system(
     mut commands: Commands,
     time: Res<Time>,
+    asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
     rapier_context: Res<RapierContext>,
     mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
@@ -882,6 +885,13 @@ fn collectable_system(
                 } else {
                     water_collection.total_player2 += 1;
                 }
+                commands.spawn(AudioBundle {
+                    source: asset_server.load("collect.mp3"),
+                    settings: PlaybackSettings {
+                        mode: PlaybackMode::Despawn,
+                        ..default()
+                    },
+                });
                 commands.entity(entity).despawn_recursive();
             }
         }
@@ -1243,6 +1253,7 @@ fn debug_system(
 fn keyboard_input_system(
     mut commands: Commands,
     time: Res<Time>,
+    asset_server: Res<AssetServer>,
     dialog_speaker: Res<DialogSpeaker>,
     dialog_speaker_open_dialog: Res<DialogSpeakerOpenDialog>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -1347,6 +1358,14 @@ fn keyboard_input_system(
             Some(_) => {}
             None => {
                 if grounded && player_movement.is_jump_reset {
+                    commands.spawn(AudioBundle {
+                        source: asset_server.load("jump.wav"),
+                        settings: PlaybackSettings {
+                            mode: PlaybackMode::Despawn,
+                            ..default()
+                        },
+                    });
+
                     // player can now jump
                     player_movement.timer.reset();
                     player_movement.airborne = true;
@@ -1555,6 +1574,13 @@ fn resetting(
                 c.despawn_descendants();
             }
             if drops.is_empty() {
+                commands.spawn(AudioBundle {
+                    source: asset_server.load("collect.mp3"),
+                    settings: PlaybackSettings {
+                        mode: PlaybackMode::Despawn,
+                        ..default()
+                    },
+                });
                 *game_phase = GamePhase::Play;
                 return;
             }
@@ -1570,6 +1596,7 @@ fn active_dialog_system(
     mut yes_or_no: ResMut<DialogDecisionSelection>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     gamepads: Res<Gamepads>,
+    asset_server: Res<AssetServer>,
     axes: Res<Axis<GamepadAxis>>,
     mut water_collection: ResMut<WaterCollection>,
     mut total_score: ResMut<TotalScore>,
@@ -1727,6 +1754,7 @@ fn active_dialog_system(
         }
         if jump_key_just_pressed {
             if yes_or_no.0 == 1 {
+                yes_or_no.0 = 0; // Reset to no after every selection
                 if dialog.title == "Tlaloc" {
                     let total = player_query
                         .iter()
@@ -1742,6 +1770,13 @@ fn active_dialog_system(
                     total_score.0 += total;
                     info!(total);
                     *game_phase = GamePhase::Reset;
+                    commands.spawn(AudioBundle {
+                        source: asset_server.load("createrain.wav"),
+                        settings: PlaybackSettings {
+                            mode: PlaybackMode::Despawn,
+                            ..default()
+                        },
+                    });
                 }
                 water_collection.total_player1 = 0;
                 water_collection.total_player2 = 0;

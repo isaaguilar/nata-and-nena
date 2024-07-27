@@ -10,6 +10,8 @@ bevy = { version = "0.14.0", features = [
     "webgl2",
     "bevy_asset",
     "bevy_render",
+    "mp3",
+    "wav",
 ] }
 bevy_prng = { version = "0.7.1", features = ["rand_chacha"] }
 bevy_rand = { version = "0.7.1", features = ["rand_chacha"] }
