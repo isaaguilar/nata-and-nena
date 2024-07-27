@@ -711,11 +711,11 @@ pub fn setup(
         },
     ));
 
-    let texture_handle = asset_server.load("chalchiuhtlicue-bust.png");
+    let texture_handle = asset_server.load("chalchiuhtlicue.png");
     commands.spawn((
         Game,
         Dialog {
-            image: texture_handle.clone(),
+            image: asset_server.load("chalchiuhtlicue-bust2.png"),
             dialog: Text {
                 sections: vec![
                     TextSection {
