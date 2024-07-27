@@ -5,6 +5,7 @@ use bevy_rapier2d::prelude::*;
 mod camera;
 mod camera_tracking;
 mod game;
+mod menu;
 mod setup;
 mod splash;
 
@@ -51,6 +52,6 @@ fn main() {
         .add_plugins(EntropyPlugin::<ChaCha8Rng>::default())
         // .add_plugins(RapierDebugRenderPlugin::default())
         .init_state::<AppState>()
-        .add_plugins((splash::SplashPlugin, game::PlatformPlugin))
+        .add_plugins((splash::SplashPlugin, menu::MenuPlugin, game::PlatformPlugin))
         .run();
 }

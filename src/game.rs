@@ -1,5 +1,6 @@
 use crate::camera_tracking;
 use crate::despawn_screen;
+use crate::menu::TotalSeconds;
 use crate::AppState;
 use crate::{
     CHARACTER_DOWNWARD_VELOCITY_PER_FRAME, MAXIMUM_DOWNWARD_VELOCITY, PLAYER_MOVEMENT_SPEED,
@@ -54,7 +55,7 @@ pub struct GustTimer(Timer);
 pub struct TotalScore(u32);
 
 #[derive(Resource, Deref, DerefMut)]
-pub struct TotalTime(Stopwatch);
+pub struct TotalTime(Timer);
 
 #[derive(Component)]
 pub struct Game;
@@ -174,13 +175,21 @@ pub fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
+    mut total_time: ResMut<TotalTime>,
+    total_seconds: Res<TotalSeconds>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    mut bg: ResMut<ClearColor>,
 ) {
+    bg.0 = Color::BLACK;
     let text_style = TextStyle {
         font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
         font_size: 18.0,
         ..default()
     };
+
+    total_time
+        .0
+        .set_duration(Duration::from_secs_f32(total_seconds.0));
 
     commands.spawn((
         Game,
@@ -684,7 +693,7 @@ pub fn setup(
             dialog: Text {
                 sections: vec![
                     TextSection {
-                        value: String::from("Collect the water droplets and take them to Tlaloc (the rain god) at the top of the sky!\n\nRemember, the more water you collect, the heavier you get."),
+                        value: String::from("Collect the water droplets and offer them to Tlaloc (the rain god) at the top of the sky!\n\nRemember, the more water you collect, the heavier you get."),
                         style: text_style.clone(),
                     },
                     TextSection {
@@ -1786,7 +1795,7 @@ impl Plugin for PlatformPlugin {
             .insert_resource(DialogSpeaker::default())
             .insert_resource(DialogSpeakerOpenDialog::default())
             .insert_resource(DialogDecisionSelection::default())
-            .insert_resource(TotalTime(Stopwatch::new()))
+            .insert_resource(TotalTime(Timer::from_seconds(999.0, TimerMode::Once)))
             .insert_resource(TotalScore(0))
             .add_systems(PreUpdate, camera_tracking::camera_tracking_system)
             .add_systems(Update, time_count_system)
