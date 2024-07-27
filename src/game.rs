@@ -5,6 +5,7 @@ use crate::{
     CHARACTER_DOWNWARD_VELOCITY_PER_FRAME, MAXIMUM_DOWNWARD_VELOCITY, PLAYER_MOVEMENT_SPEED,
 };
 use bevy::text::TextLayoutInfo;
+use bevy::time::Stopwatch;
 use bevy::{prelude::*, render::texture::ImageLoader};
 use bevy_prng::ChaCha8Rng;
 use bevy_rand::resource::GlobalEntropy;
@@ -13,6 +14,7 @@ use rand::prelude::Rng;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::time::Duration;
+use std::time::Instant;
 
 const PLAYER_SPRITE_SIZE_Y: f32 = 50.;
 
@@ -47,6 +49,12 @@ pub struct WaterCollection {
 
 #[derive(Resource, Deref, DerefMut)]
 pub struct GustTimer(Timer);
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct TotalScore(u32);
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct TotalTime(Stopwatch);
 
 #[derive(Component)]
 pub struct Game;
@@ -145,7 +153,13 @@ pub struct Platform {
 }
 
 #[derive(Component)]
-pub struct Scoreboard;
+pub struct WaterCollectionScoreboard;
+
+#[derive(Component)]
+pub struct TotalScoreboard;
+
+#[derive(Component)]
+pub struct TimeDisplay;
 
 #[derive(Component)]
 pub struct BigWaterDrop;
@@ -533,7 +547,36 @@ pub fn setup(
     ));
 
     commands.spawn((
-        Scoreboard,
+        TimeDisplay,
+        TextBundle::from_sections([
+            TextSection {
+                value: String::from("TIME "),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 16.0,
+                    ..default()
+                },
+            },
+            TextSection {
+                value: String::from("0"),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 16.0,
+                    ..default()
+                },
+            },
+        ])
+        .with_text_justify(JustifyText::Left)
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            top: Val::Percent(2.0),
+            left: Val::Percent(3.0),
+            ..default()
+        }),
+    ));
+
+    commands.spawn((
+        WaterCollectionScoreboard,
         TextBundle::from_sections([
             TextSection {
                 value: String::from("Nata's Water: "),
@@ -560,7 +603,23 @@ pub fn setup(
                 },
             },
             TextSection {
-                value: String::from("\n\n0"),
+                value: String::from("0"),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 16.0,
+                    ..default()
+                },
+            },
+            TextSection {
+                value: String::from("\n\nTotal: "),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 16.0,
+                    ..default()
+                },
+            },
+            TextSection {
+                value: String::from("0"),
                 style: TextStyle {
                     font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
                     font_size: 16.0,
@@ -568,7 +627,7 @@ pub fn setup(
                 },
             },
         ])
-        .with_text_justify(JustifyText::Center)
+        .with_text_justify(JustifyText::Left)
         .with_style(Style {
             position_type: PositionType::Absolute,
             top: Val::Percent(7.0),
@@ -653,6 +712,22 @@ pub fn setup(
     ));
 }
 
+fn time_count_system(
+    time: Res<Time>,
+    dialog_speaker_open_dialog: Res<DialogSpeakerOpenDialog>,
+    mut total_time: ResMut<TotalTime>,
+    mut time_display_query: Query<&mut Text, With<TimeDisplay>>,
+) {
+    if dialog_speaker_open_dialog.0 {
+        return;
+    }
+    total_time.0.tick(time.delta());
+    match time_display_query.get_single_mut() {
+        Ok(mut d) => d.sections[1].value = total_time.0.elapsed_secs().to_string(),
+        Err(_) => {}
+    }
+}
+
 pub fn platform_sensor_system(
     mut commands: Commands,
     player: Query<(Entity, &Player, &Transform, &KinematicCharacterController), With<Player>>,
@@ -688,10 +763,11 @@ fn collectable_system(
     rapier_context: Res<RapierContext>,
     mut rng: ResMut<GlobalEntropy<ChaCha8Rng>>,
     mut water_collection: ResMut<WaterCollection>,
+    total_score: Res<TotalScore>,
     mut water_collectable_spawner_query: Query<&mut WaterCollectableSpawner>,
     mut water_collectable_query: Query<(Entity, &mut WaterCollectable), With<WaterCollectable>>,
     player_query: Query<(Entity, &Player)>,
-    mut scoreboard_query: Query<&mut Text, With<Scoreboard>>,
+    mut scoreboard_query: Query<&mut Text, With<WaterCollectionScoreboard>>,
 ) {
     for mut spawner in water_collectable_spawner_query.iter_mut() {
         spawner.min_time.tick(time.delta());
@@ -773,9 +849,10 @@ fn collectable_system(
     }
 
     let mut score = scoreboard_query.single_mut();
-    let total = water_collection.total_player1 + water_collection.total_player2;
+
     score.sections[1].value = water_collection.total_player2.to_string();
     score.sections[3].value = water_collection.total_player1.to_string();
+    score.sections[5].value = total_score.0.to_string();
 }
 
 fn cloud_movement(
@@ -1387,8 +1464,9 @@ fn resetting(
     mut player_query: Query<(Entity, &mut Transform, &Player), With<Player>>,
     mut drops: Query<Entity, With<BigWaterDrop>>,
 ) {
+    let mut done = false;
     if *game_phase == GamePhase::Reset {
-        for (entity, transform) in kinematic_player_query.iter_mut() {
+        for (entity, _) in kinematic_player_query.iter_mut() {
             let mut c = commands.entity(entity);
             c.with_children(|child| {
                 let texture_handle = asset_server.load("transparentdrop.png");
@@ -1408,13 +1486,21 @@ fn resetting(
             c.remove::<KinematicCharacterController>();
         }
 
-        let mut done = false;
+        let heights = player_query
+            .iter()
+            .map(|(_, transform, _)| transform.translation.y)
+            .collect::<Vec<_>>();
+        let sum: f32 = heights.iter().sum();
+        let mut height = sum / heights.len() as f32;
+
+        height -= 3.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
+
         for (entity, mut transform, player) in player_query.iter_mut() {
-            transform.translation.y -= 3.0 * PLAYER_MOVEMENT_SPEED * time.delta_seconds();
-            if !done {
-                done = transform.translation.y < -400.0;
-            }
-            if done {
+            transform.translation.y = height;
+        }
+
+        if height < -400.0 {
+            for (entity, _, player) in player_query.iter() {
                 let group = if player.0 == 1 {
                     Group::GROUP_11
                 } else {
@@ -1429,14 +1515,13 @@ fn resetting(
 
                 c.despawn_descendants();
             }
-        }
-        if done {
             if drops.is_empty() {
                 *game_phase = GamePhase::Play;
+                return;
             }
-        } else {
-            time.advance_by(Duration::ZERO)
         }
+
+        time.advance_by(Duration::ZERO)
     }
 }
 
@@ -1448,12 +1533,14 @@ fn active_dialog_system(
     gamepads: Res<Gamepads>,
     axes: Res<Axis<GamepadAxis>>,
     mut water_collection: ResMut<WaterCollection>,
+    mut total_score: ResMut<TotalScore>,
     mut game_phase: ResMut<GamePhase>,
     button_inputs: Res<ButtonInput<GamepadButton>>,
     dialog_speaker: ResMut<DialogSpeaker>,
     mut dialog_speaker_open_dialog: ResMut<DialogSpeakerOpenDialog>,
     open_dialog: Query<Entity, With<DialogBox>>,
     mut dialog_query: Query<(Entity, &Dialog, &Transform)>,
+    mut player_query: Query<(&Transform, &Player), With<Player>>,
 ) {
     if !dialog_speaker_open_dialog.0 {
         for entity in &open_dialog {
@@ -1510,6 +1597,28 @@ fn active_dialog_system(
         }
     };
 
+    let platform_warning = if dialog.title == "Tlaloc" && (index == 1 || index == 2) {
+        let players_too_low = player_query
+            .iter()
+            .filter(|(t, _)| t.translation.y < 1110.0)
+            .collect::<Vec<_>>();
+        if players_too_low.is_empty() {
+            String::new()
+        } else {
+            players_too_low
+                .iter()
+                .fold::<String, _>(String::new(), |s, (_, player)| {
+                    if player.0 == 1 {
+                        String::from("  (Nena's drops will not contributed)")
+                    } else {
+                        String::from("  (Nata's drop will not be contributed)")
+                    }
+                })
+        }
+    } else {
+        String::new()
+    };
+
     if index > 0 && !open_dialog.is_empty() {
         time.advance_by(Duration::ZERO);
         if right_key_pressed || left_key_pressed {
@@ -1552,7 +1661,11 @@ fn active_dialog_system(
                     });
                     child.spawn(
                         TextBundle::from_section(
-                            format!("{}{}", dialog.dialog.sections[index].value.clone(), ""),
+                            format!(
+                                "{} {}",
+                                dialog.dialog.sections[index].value.clone(),
+                                platform_warning
+                            ),
                             dialog.dialog.sections[0].style.clone(),
                         )
                         .with_text_justify(JustifyText::Left)
@@ -1572,7 +1685,18 @@ fn active_dialog_system(
         if jump_key_just_pressed {
             if yes_or_no.0 == 1 {
                 if dialog.title == "Tlaloc" {
-                    let total = water_collection.total_player1 + water_collection.total_player2;
+                    let total = player_query
+                        .iter()
+                        .filter(|(t, _)| t.translation.y >= 1110.0)
+                        .fold::<u32, _>(0, |mut s, (_, player)| {
+                            if player.0 == 1 {
+                                s += water_collection.total_player1;
+                            } else {
+                                s += water_collection.total_player2;
+                            }
+                            s
+                        });
+                    total_score.0 += total;
                     info!(total);
                     *game_phase = GamePhase::Reset;
                 }
@@ -1627,7 +1751,11 @@ fn active_dialog_system(
                 });
                 child.spawn(
                     TextBundle::from_section(
-                        format!("{}{}", dialog.dialog.sections[index].value.clone(), ""),
+                        format!(
+                            "{} {}",
+                            dialog.dialog.sections[index].value.clone(),
+                            platform_warning
+                        ),
                         dialog.dialog.sections[0].style.clone(),
                     )
                     .with_text_justify(JustifyText::Left)
@@ -1651,14 +1779,17 @@ impl Plugin for PlatformPlugin {
             .init_resource::<GamePhase>()
             .init_resource::<DevPhase>()
             .insert_resource(WaterCollection {
-                total_player1: 0,
+                total_player1: 15,
                 total_player2: 1,
             })
             .insert_resource(GustTimer(Timer::from_seconds(1.0, TimerMode::Repeating)))
             .insert_resource(DialogSpeaker::default())
             .insert_resource(DialogSpeakerOpenDialog::default())
             .insert_resource(DialogDecisionSelection::default())
+            .insert_resource(TotalTime(Stopwatch::new()))
+            .insert_resource(TotalScore(0))
             .add_systems(PreUpdate, camera_tracking::camera_tracking_system)
+            .add_systems(Update, time_count_system)
             .add_systems(
                 Update,
                 (
