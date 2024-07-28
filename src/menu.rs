@@ -143,6 +143,8 @@ fn menu_setup(mut commands: Commands, asset_server: Res<AssetServer>, mut bg: Re
             ..default()
         },
     ));
+
+    // corner indicator of selected player
 }
 
 fn menu_selection_system(

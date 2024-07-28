@@ -87,7 +87,7 @@ fn gameover_setup(
         TextBundle::from_sections(vec![
             TextSection {
                 value: String::from(
-                    "Credits\n\nPlay testers:\n\n- Dominic Aguilar\n\n- Frankie Aguilar\n\n- Julien Aguilar\n\n",
+                    "Credits\n\nPlay testers\n\n- Julien, Frankie & Dominic Aguilar\n\n",
                 ),
                 style: TextStyle {
                     font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
@@ -98,7 +98,7 @@ fn gameover_setup(
             },
             TextSection {
                 value: String::from(
-                    "Lead Engineer, Music Producer & everything else\n\n- Isa Aguilar\n\n",
+                    "Lead Engineer, Music Producer, Art & Design\n\n- Isa Aguilar\n\n",
                 ),
                 style: TextStyle {
                     font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
@@ -121,7 +121,7 @@ fn gameover_setup(
         .with_style(Style {
             position_type: PositionType::Absolute,
             align_items: AlignItems::Center,
-            top: Val::Percent(40.0),
+            top: Val::Percent(50.0),
             left: Val::Percent(2.0),
 
             ..default()

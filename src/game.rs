@@ -140,6 +140,9 @@ pub struct Dialog {
 }
 
 #[derive(Component)]
+pub struct PlayerIndicator;
+
+#[derive(Component)]
 pub struct WindGust {
     timer: Timer,
     quarter_lifetime_in_seconds: Timer,
@@ -309,6 +312,40 @@ pub fn setup(
             Group::from(Group::GROUP_1),
             Group::from(Group::GROUP_1),
         ));
+
+    let texture_handle = asset_server.load("players.png");
+    let layout = TextureAtlasLayout::from_grid(
+        UVec2::new(40, 52),
+        2,
+        1,
+        Some(UVec2::new(0, 0)),
+        Some(UVec2::new(0, 0)),
+    );
+    let texture_atlas_layout = texture_atlas_layouts.add(layout);
+    commands.spawn((
+        Game,
+        PlayerIndicator,
+        TextureAtlas {
+            layout: texture_atlas_layout.clone(),
+            index: 0,
+        },
+        ImageBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                top: Val::Percent(1.5),
+                right: Val::Percent(1.5),
+                height: Val::Px(52.0),
+                width: Val::Px(40.0),
+
+                ..default()
+            },
+            image: UiImage {
+                texture: texture_handle,
+                ..default()
+            },
+            ..default()
+        },
+    ));
 
     commands.spawn((
         Game,
@@ -747,6 +784,28 @@ pub fn setup(
             ..default()
         },
     ));
+}
+
+fn player_indicator_system(
+    active_player_query: Query<&Player, With<ActivePlayer>>,
+    mut player_indicator_query: Query<
+        &mut TextureAtlas,
+        (Without<ActivePlayer>, With<PlayerIndicator>),
+    >,
+) {
+    let player = match active_player_query.get_single() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let mut indicator = match player_indicator_query.get_single_mut() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    if player.0 == 1 {
+        indicator.index = 0
+    } else {
+        indicator.index = 1
+    }
 }
 
 fn time_count_system(
@@ -1955,7 +2014,7 @@ impl Plugin for PlatformPlugin {
             .insert_resource(TotalTime(Timer::from_seconds(999.0, TimerMode::Once)))
             .insert_resource(TotalScore(0))
             .add_systems(PreUpdate, camera_tracking::camera_tracking_system)
-            .add_systems(Update, time_count_system)
+            .add_systems(Update, (time_count_system, player_indicator_system))
             .add_systems(
                 Update,
                 (
