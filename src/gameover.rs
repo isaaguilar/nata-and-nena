@@ -81,6 +81,53 @@ fn gameover_setup(
         }),
     ));
 
+    commands.spawn((
+        RenderLayers::layer(2),
+        OnGameOverScreen,
+        TextBundle::from_sections(vec![
+            TextSection {
+                value: String::from(
+                    "Credits\n\nPlay testers:\n\n- Dominic Aguilar\n\n- Frankie Aguilar\n\n- Julien Aguilar\n\n",
+                ),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 24.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            },
+            TextSection {
+                value: String::from(
+                    "Lead Engineer, Music Producer & everything else\n\n- Isa Aguilar\n\n",
+                ),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 24.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            },
+            TextSection {
+                value: String::from("Special thanks to ♥♥ Alma Aguilar (Wifey!) ♥♥"),
+                style: TextStyle {
+                    font: asset_server.load("fonts/PressStart2P-vaV7.ttf"),
+                    font_size: 24.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            },
+        ])
+        .with_text_justify(JustifyText::Left)
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            align_items: AlignItems::Center,
+            top: Val::Percent(40.0),
+            left: Val::Percent(2.0),
+
+            ..default()
+        }),
+    ));
+
     commands.insert_resource(GameOverTimer(Timer::from_seconds(1.0, TimerMode::Once)));
 }
 
