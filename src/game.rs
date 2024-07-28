@@ -362,7 +362,7 @@ pub fn setup(
             // grid: GridOptions { rows: 1, cols: 1 },
             min_height: -350.,
             max_height: 200.,
-            min_time: Timer::from_seconds(5.0, TimerMode::Once),
+            min_time: Timer::from_seconds(1.0, TimerMode::Once),
             max_time: Timer::from_seconds(60., TimerMode::Once),
             retry_time: Timer::from_seconds(0.1, TimerMode::Repeating),
             probability: Range { start: 1, end: 20 },
@@ -1711,6 +1711,57 @@ fn active_dialog_system(
                     },
                 ))
                 .with_children(|child| {
+                    child
+                        .spawn(NodeBundle {
+                            background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
+                            style: Style {
+                                // width: Val::Percent(33.0),
+                                height: Val::Percent(50.0),
+                                position_type: PositionType::Absolute,
+                                align_items: AlignItems::Start,
+                                padding: UiRect {
+                                    left: Val::Percent(1.),
+                                    right: Val::Percent(1.),
+                                    top: Val::Percent(1.),
+                                    bottom: Val::Percent(0.),
+                                },
+                                top: Val::Percent(-50.0),
+                                left: Val::Percent(0.0),
+                                ..default()
+                            },
+
+                            ..default()
+                        })
+                        .with_children(|child| {
+                            child.spawn((
+                                Game,
+                                TextBundle::from_section(
+                                    format!("{} ({})", dialog.title, dialog.subtitle),
+                                    dialog.dialog.sections[0].style.clone(),
+                                )
+                                .with_style(Style {
+                                    position_type: PositionType::Relative,
+                                    align_items: AlignItems::Start,
+
+                                    ..default()
+                                }),
+                            ));
+                        });
+                    child.spawn(NodeBundle {
+                        background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
+                        transform: Transform::from_translation(Vec3::new(0.0, 40.0, 0.0)),
+                        style: Style {
+                            width: Val::Percent(97.0),
+                            height: Val::Percent(15.0),
+                            position_type: PositionType::Absolute,
+                            align_items: AlignItems::Center,
+                            bottom: Val::Percent(2.5),
+                            left: Val::Percent(1.5),
+                            ..default()
+                        },
+
+                        ..default()
+                    });
                     child.spawn((
                         Game,
                         ImageBundle {
@@ -1813,6 +1864,42 @@ fn active_dialog_system(
                 },
             ))
             .with_children(|child| {
+                child
+                    .spawn(NodeBundle {
+                        background_color: BackgroundColor(Color::srgb(0.0, 0.0, 0.0)),
+                        style: Style {
+                            // width: Val::Percent(33.0),
+                            height: Val::Percent(50.0),
+                            position_type: PositionType::Absolute,
+                            align_items: AlignItems::Start,
+                            padding: UiRect {
+                                left: Val::Percent(1.),
+                                right: Val::Percent(1.),
+                                top: Val::Percent(1.),
+                                bottom: Val::Percent(0.),
+                            },
+                            top: Val::Percent(-50.0),
+                            left: Val::Percent(0.0),
+                            ..default()
+                        },
+
+                        ..default()
+                    })
+                    .with_children(|child| {
+                        child.spawn((
+                            Game,
+                            TextBundle::from_section(
+                                format!("{} ({})", dialog.title, dialog.subtitle),
+                                dialog.dialog.sections[0].style.clone(),
+                            )
+                            .with_style(Style {
+                                position_type: PositionType::Relative,
+                                align_items: AlignItems::Start,
+
+                                ..default()
+                            }),
+                        ));
+                    });
                 child.spawn((
                     Game,
                     ImageBundle {
@@ -1882,7 +1969,7 @@ impl Plugin for PlatformPlugin {
                     platform_sensor_system,
                     gust_system,
                     collectable_system,
-                    debug_system,
+                    // debug_system,
                 )
                     .chain()
                     .run_if(in_state(AppState::Game)),

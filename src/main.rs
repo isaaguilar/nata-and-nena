@@ -25,21 +25,6 @@ enum AppState {
     GameOver,
 }
 
-pub fn close_on_esc(
-    mut commands: Commands,
-    focused_windows: Query<(Entity, &Window)>,
-    input: Res<ButtonInput<KeyCode>>,
-) {
-    for (window, focus) in focused_windows.iter() {
-        if !focus.focused {
-            continue;
-        }
-        if input.just_pressed(KeyCode::Escape) {
-            commands.entity(window).despawn();
-        }
-    }
-}
-
 fn despawn_screen<T: Component>(to_despawn: Query<Entity, With<T>>, mut commands: Commands) {
     for entity in &to_despawn {
         commands.entity(entity).despawn_recursive();
@@ -60,7 +45,6 @@ fn music(asset_server: Res<AssetServer>, mut commands: Commands) {
 fn main() {
     App::new()
         .add_plugins((setup::WindowSetup, camera::CameraPlugin))
-        .add_systems(PreUpdate, (close_on_esc))
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0))
         .add_plugins(EntropyPlugin::<ChaCha8Rng>::default())
         // .add_plugins(RapierDebugRenderPlugin::default())
