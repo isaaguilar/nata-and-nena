@@ -574,7 +574,7 @@ pub fn setup(
         SpriteBundle {
             texture: texture_handle.clone(),
             transform: Transform {
-                translation: Vec3::new(0.0, 6000.0 - 750., -10.0),
+                translation: Vec3::new(0.0, 5850.0 - 750., -10.0),
                 ..default()
             },
             ..default()
