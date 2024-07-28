@@ -1768,7 +1768,7 @@ fn active_dialog_system(
                             s
                         });
                     total_score.0 += total;
-                    info!(total);
+
                     *game_phase = GamePhase::Reset;
                     commands.spawn(AudioBundle {
                         source: asset_server.load("createrain.wav"),

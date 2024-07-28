@@ -1,5 +1,6 @@
 use crate::despawn_screen;
 use crate::AppState;
+use bevy::scene::ron::de;
 use bevy::{prelude::*, render::view::RenderLayers};
 
 #[derive(Component)]
@@ -102,6 +103,45 @@ fn menu_setup(mut commands: Commands, asset_server: Res<AssetServer>, mut bg: Re
 
             ..default()
         }),
+    ));
+
+    commands.spawn((
+        MenuScreen,
+        RenderLayers::layer(2),
+        SpriteBundle {
+            texture: asset_server.load("synopsys.png"),
+            transform: Transform {
+                translation: Vec3::new(0.0, -120.0, 10.0),
+                ..default()
+            },
+            ..default()
+        },
+    ));
+
+    commands.spawn((
+        MenuScreen,
+        RenderLayers::layer(2),
+        SpriteBundle {
+            texture: asset_server.load("gamecontroller.png"),
+            transform: Transform {
+                translation: Vec3::new(400.0, -270.0, 10.0),
+                ..default()
+            },
+            ..default()
+        },
+    ));
+
+    commands.spawn((
+        MenuScreen,
+        RenderLayers::layer(2),
+        SpriteBundle {
+            texture: asset_server.load("keyboard.png"),
+            transform: Transform {
+                translation: Vec3::new(-400.0, -270.0, 10.0),
+                ..default()
+            },
+            ..default()
+        },
     ));
 }
 
