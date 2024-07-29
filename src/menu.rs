@@ -51,6 +51,25 @@ fn menu_setup(mut commands: Commands, asset_server: Res<AssetServer>, mut bg: Re
 
     commands.spawn((
         MenuScreen,
+        ImageBundle {
+            style: Style {
+                position_type: PositionType::Absolute,
+                top: Val::Percent(1.5),
+                left: Val::Percent(27.5),
+                height: Val::Px(100.0),
+                // width: Val::Px(40.0),
+                ..default()
+            },
+            image: UiImage {
+                texture: asset_server.load("gamemenutitle.png"),
+                ..default()
+            },
+            ..default()
+        },
+    ));
+
+    commands.spawn((
+        MenuScreen,
         MenuScrollControl {
             rate_limit_selection: Timer::from_seconds(0.2, TimerMode::Once),
             selection_index: 1,
